@@ -332,6 +332,45 @@ void LayerTestsCommon::Compare(const InferenceEngine::Blob::Ptr &expected, const
     }
 }
 
+void LayerTestsCommon::Compare(const ov::Tensor &expected, const ov::Tensor &actual) {
+    OPENVINO_ASSERT(expected.get_element_type() == actual.get_element_type());
+    OPENVINO_ASSERT(expected.get_size() == actual.get_size());
+
+    const auto expectedBuffer = expected.data();
+    const auto actualBuffer = actual.data();
+
+    const auto &precision = actual.get_element_type();
+    const auto &size = actual.get_size();
+    switch (precision) {
+        case ov::element::Type_t::f32:
+            Compare(reinterpret_cast<const float *>(expectedBuffer), reinterpret_cast<const float *>(actualBuffer),
+                    size, threshold);
+            break;
+        case ov::element::Type_t::i32:
+            Compare(reinterpret_cast<const std::int32_t *>(expectedBuffer),
+                    reinterpret_cast<const std::int32_t *>(actualBuffer), size, 0);
+            break;
+        case ov::element::Type_t::f16:
+            Compare(reinterpret_cast<const ov::float16 *>(expectedBuffer),
+                    reinterpret_cast<const ov::float16 *>(actualBuffer), size, 0);
+            break;
+        case ov::element::Type_t::i16:
+            Compare(reinterpret_cast<const std::int16_t *>(expectedBuffer),
+                    reinterpret_cast<const std::int16_t *>(actualBuffer), size, 0);
+            break;
+        case ov::element::Type_t::u8:
+            Compare(reinterpret_cast<const std::uint8_t *>(expectedBuffer),
+                    reinterpret_cast<const std::uint8_t *>(actualBuffer), size, 0);
+            break;
+        case ov::element::Type_t::i8:
+            Compare(reinterpret_cast<const std::int8_t *>(expectedBuffer),
+                    reinterpret_cast<const std::int8_t *>(actualBuffer), size, 0);
+            break;
+        default:
+            FAIL() << "Comparator for " << precision << " precision isn't supported";
+    }
+}
+
 void LayerTestsCommon::Compare(const InferenceEngine::TensorDesc &actualDesc, const InferenceEngine::TensorDesc &expectedDesc) {
     auto expectedDims = actualDesc.getDims();
     auto actualDims = expectedDesc.getDims();

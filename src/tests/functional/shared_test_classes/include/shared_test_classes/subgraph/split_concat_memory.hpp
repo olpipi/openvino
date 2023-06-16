@@ -11,8 +11,8 @@
 namespace SubgraphTestsDefinitions {
 
 using SplitConcatMemoryParamsTuple = typename std::tuple<
-    std::vector<size_t>,         // input shapes
-    InferenceEngine::Precision,  // precision
+    CommonTestUtils::SizeVector, // input shapes
+    ov::element::Type_t,         // precision
     int,                         // axis of split
     std::string                  // device name
 >;
@@ -26,6 +26,7 @@ public:
 protected:
     void SetUp() override;
 
+    ov::element::Type_t netPrecision;
     int axis;
 };
 
