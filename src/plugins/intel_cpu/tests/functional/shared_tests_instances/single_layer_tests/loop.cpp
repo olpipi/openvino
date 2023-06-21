@@ -17,8 +17,7 @@ namespace {
     std::vector<std::vector<std::pair<std::vector<size_t>, LOOP_IN_TYPE>>> inputs = {
             {{{32, 1, 10}, LOOP_IN_TYPE::INVARIANT}, {{32, 1, 10}, LOOP_IN_TYPE::INVARIANT}, {{32, 1, 10}, LOOP_IN_TYPE::MERGED}},
     };
-    std::vector<InferenceEngine::Precision> netPrecisions = {InferenceEngine::Precision::FP32,
-                                                             InferenceEngine::Precision::FP16};
+    std::vector<ov::element::Type_t> netPrecisions = {ov::element::Type_t::f32, ov::element::Type_t::i32};
 
     INSTANTIATE_TEST_SUITE_P(smoke_LoopCommonZeroClip, LoopTest,
                             ::testing::Combine(
@@ -46,7 +45,6 @@ namespace {
     };
 
     using namespace testing;
-    using namespace InferenceEngine;
 
     INSTANTIATE_TEST_SUITE_P(smoke_StaticShapeLoop, StaticShapeLoopTest,
                             Combine(
@@ -54,15 +52,15 @@ namespace {
                                     Values(true),
                                     ValuesIn(static_loop_types),
                                     Values<int64_t>(7),
-                                    Values<InferenceEngine::SizeVector>({2, 1, 4}),
-                                    Values<InferenceEngine::Precision>(Precision::FP32, Precision::I32),
+                                    Values<CommonTestUtils::SizeVector>({2, 1, 4}),
+                                    Values<ov::element::Type_t>(ov::element::Type_t::f32, ov::element::Type_t::i32),
                                     Values(CommonTestUtils::DEVICE_CPU),
-                                    Values<std::map<std::string, std::string>>({})));
+                                    Values<ov::AnyMap>({})));
     using namespace testing;
     INSTANTIATE_TEST_SUITE_P(smoke_TrivialLoop, TrivialLoopTest,
                             Combine(
-                                    Values<InferenceEngine::Precision>(Precision::FP32, Precision::I32),
-                                    Values<InferenceEngine::SizeVector>({2, 3, 4}),
+                                    Values<ov::element::Type_t>(ov::element::Type_t::f32, ov::element::Type_t::i32),
+                                    Values<CommonTestUtils::SizeVector>({2, 3, 4}),
                                     Values(CommonTestUtils::DEVICE_CPU)));
 
 }  // namespace

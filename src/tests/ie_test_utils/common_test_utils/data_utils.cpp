@@ -206,6 +206,10 @@ size_t byte_size(const InferenceEngine::TensorDesc &tdesc) {
 }
 OPENVINO_SUPPRESS_DEPRECATED_END
 
+size_t byte_size(const ov::element::Type_t& prc, SizeVector &dims) {
+    return ov::element::Type(prc).size() * std::accumulate(std::begin(dims), std::end(dims), (size_t)1, std::multiplies<size_t>());
+}
+
 
 void fill_data_with_broadcast(ov::Tensor& tensor, ov::Tensor& values) {
     constexpr size_t MAX_N_DIMS = 7;  // Suppose it's enough

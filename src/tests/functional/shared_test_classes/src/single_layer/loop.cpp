@@ -13,7 +13,7 @@ namespace LayerTestsDefinitions {
         bool body_condition; // works only if is_body_condition_const ==
         int64_t trip_count;
         std::vector<std::pair<std::vector<size_t>, LOOP_IN_TYPE>> inputs;
-        InferenceEngine::Precision netPrecision;
+        ov::element::Type_t netPrecision;
         std::string targetDevice;
         std::tie(execute_first_iteration, is_body_condition_const, body_condition, trip_count, inputs, netPrecision,
                  targetDevice) = obj.param;
@@ -31,7 +31,7 @@ namespace LayerTestsDefinitions {
         result << "trip_count=" << trip_count << "_";
         result << "IS=" << CommonTestUtils::vec2str(inputs_separate) << "_";
         result << "types=" << CommonTestUtils::vec2str(types_separate) << "_";
-        result << "netPRC=" << netPrecision.name() << "_";
+        result << "netPRC=" << ov::element::Type(netPrecision).get_type_name() << "_";
         result << "targetDevice=" << targetDevice << "_";
         auto res_str = result.str();
         std::replace(res_str.begin(), res_str.end(), '-', '_');
@@ -45,11 +45,9 @@ namespace LayerTestsDefinitions {
         bool body_condition; // works only if is_body_condition_const ==
         int64_t trip_count;
         std::vector<std::pair<std::vector<size_t>, LOOP_IN_TYPE>> inputs;
-        InferenceEngine::Precision netPrecision;
+        ov::element::Type_t netPrecision;
         std::tie(execute_first_iteration, is_body_condition_const, body_condition, trip_count, inputs, netPrecision,
                  targetDevice) = this->GetParam();
-
-        auto ngPrc = FuncTestUtils::PrecisionUtils::convertIE2nGraphPrc(netPrecision);
 
         // That which we iterate over
         std::vector<std::vector<size_t>> inputs_separate;
@@ -59,63 +57,63 @@ namespace LayerTestsDefinitions {
             types_separate.push_back(el.second);
         }
         // Example:
-        /*      auto X = std::make_shared<ngraph::opset5::Parameter>(ngraph::element::f32, ngraph::Shape{32, 1, 10});
-        auto Y = std::make_shared<ngraph::opset5::Parameter>(ngraph::element::f32, ngraph::Shape{32, 1, 10});
-        auto M = std::make_shared<ngraph::opset5::Parameter>(ngraph::element::f32, ngraph::Shape{32, 1, 10});*/
-        auto params = ngraph::builder::makeParams(ngPrc, inputs_separate);
+        /*      auto X = std::make_shared<ov::op::v0::Parameter>(ov::element::Type_t::f32, ov::Shape{32, 1, 10});
+        auto Y = std::make_shared<ov::op::v0::Parameter>(ov::element::Type_t::f32, ov::Shape{32, 1, 10});
+        auto M = std::make_shared<ov::op::v0::Parameter>(ov::element::Type_t::f32, ov::Shape{32, 1, 10});*/
+        auto params = ngraph::builder::makeParams(netPrecision, inputs_separate);
 
         // Set up the cell body, a function from (Xi, Yi) -> (Zo)
         // Body parameters
-        const std::vector<ngraph::PartialShape> body_params_shapes(inputs_separate.size(), ngraph::PartialShape::dynamic());
-        auto current_iteration = std::make_shared<ngraph::opset5::Parameter>(ngraph::element::i64, ngraph::Shape{1});
+        const std::vector<ov::PartialShape> body_params_shapes(inputs_separate.size(), ov::PartialShape::dynamic());
+        auto current_iteration = std::make_shared<ov::op::v0::Parameter>(ov::element::Type_t::i64, ov::Shape{1});
 
         //Example:
-/*      auto Xi = std::make_shared<ngraph::opset5::Parameter>(ngraph::element::f32, ngraph::PartialShape::dynamic());
-        auto Yi = std::make_shared<ngraph::opset5::Parameter>(ngraph::element::f32, ngraph::PartialShape::dynamic());
-        auto M_body = std::make_shared<ngraph::opset5::Parameter>(ngraph::element::f32, ngraph::PartialShape::dynamic());*/
+/*      auto Xi = std::make_shared<ov::op::v0::Parameter>(ov::element::Type_t::f32, ov::PartialShape::dynamic());
+        auto Yi = std::make_shared<ov::op::v0::Parameter>(ov::element::Type_t::f32, ov::PartialShape::dynamic());
+        auto M_body = std::make_shared<ov::op::v0::Parameter>(ov::element::Type_t::f32, ov::PartialShape::dynamic());*/
 
-        ngraph::ParameterVector body_params;
+        ov::ParameterVector body_params;
         for (const auto &pshape : body_params_shapes) {
-            auto paramNode = std::make_shared<ngraph::opset1::Parameter>(ngPrc, pshape);
+            auto paramNode = std::make_shared<ov::op::v0::Parameter>(netPrecision, pshape);
             body_params.push_back(paramNode);
         }
 
-        std::shared_ptr<ngraph::Node> body_condition_const;
+        std::shared_ptr<ov::Node> body_condition_const;
         if (is_body_condition_const) {
             if (body_condition) {
-                body_condition_const = std::make_shared<ngraph::opset5::Constant>(
-                        ngraph::element::boolean, ngraph::Shape{1}, true);
+                body_condition_const = std::make_shared<ov::op::v0::Constant>(
+                        ov::element::Type_t::boolean, ov::Shape{1}, true);
             } else {
-                body_condition_const = std::make_shared<ngraph::opset5::Constant>(
-                        ngraph::element::boolean, ngraph::Shape{1}, false);
+                body_condition_const = std::make_shared<ov::op::v0::Constant>(
+                        ov::element::Type_t::boolean, ov::Shape{1}, false);
             }
         }
 
         auto trip_count_const =
-                std::make_shared<ngraph::opset5::Constant>(ngraph::element::i64, ngraph::Shape{1}, trip_count);
+                std::make_shared<ov::op::v0::Constant>(ov::element::Type_t::i64, ov::Shape{1}, trip_count);
 
-        std::shared_ptr<ngraph::Node> exec_condition;
+        std::shared_ptr<ov::Node> exec_condition;
         if (execute_first_iteration) {
-            exec_condition = std::make_shared<ngraph::opset5::Constant>(
-                    ngraph::element::boolean, ngraph::Shape{1}, true);
+            exec_condition = std::make_shared<ov::op::v0::Constant>(
+                    ov::element::Type_t::boolean, ov::Shape{1}, true);
         } else {
-            exec_condition = std::make_shared<ngraph::opset5::Constant>(
-                    ngraph::element::boolean, ngraph::Shape{1}, false);
+            exec_condition = std::make_shared<ov::op::v0::Constant>(
+                    ov::element::Type_t::boolean, ov::Shape{1}, false);
         }
 
         // Body
-        std::shared_ptr<ngraph::Node> Zo = body_params[0];
+        std::shared_ptr<ov::Node> Zo = body_params[0];
         for (int i = 1; i < body_params.size(); ++i) {
-            Zo = std::make_shared<ngraph::op::v1::Add>(body_params[i], Zo);
+            Zo = std::make_shared<ov::op::v1::Add>(body_params[i], Zo);
         }
 
         // body_params.insert(body_params.begin(), current_iteration);
-        auto body = std::make_shared<ngraph::Function>(ngraph::OutputVector{body_condition_const, Zo},
+        auto body = std::make_shared<ov::Model>(ov::OutputVector{body_condition_const, Zo},
                                                   body_params);
 
-        auto loop = std::make_shared<ngraph::opset5::Loop>(trip_count_const, exec_condition);
+        auto loop = std::make_shared<ov::op::v5::Loop>(trip_count_const, exec_condition);
         loop->set_function(body);
-        loop->set_special_body_ports(ngraph::opset5::Loop::SpecialBodyPorts{-1, 0});
+        loop->set_special_body_ports(ov::op::v5::Loop::SpecialBodyPorts{-1, 0});
 
         for (int i = 0; i < body_params.size(); ++i) {
             if (types_separate[i] == LOOP_IN_TYPE::INVARIANT) {
@@ -134,10 +132,10 @@ namespace LayerTestsDefinitions {
         // start=0, stride=1, part_size=1, end=-1, axis=1
         auto out2 = loop->get_concatenated_slices(Zo, 0, 1, 1, -1, 1);
 
-        auto result0 = std::make_shared<ngraph::opset5::Result>(out0);
-        auto result1 = std::make_shared<ngraph::opset5::Result>(out1);
-        auto result2 = std::make_shared<ngraph::opset5::Result>(out2);
-        function = std::make_shared<ngraph::Function>(ngraph::ResultVector{result0, result1, result2}, params, "loop");
+        auto result0 = std::make_shared<ov::op::v0::Result>(out0);
+        auto result1 = std::make_shared<ov::op::v0::Result>(out1);
+        auto result2 = std::make_shared<ov::op::v0::Result>(out2);
+        model = std::make_shared<ov::Model>(ov::ResultVector{result0, result1, result2}, params, "loop");
     }
 
     std::string StaticShapeLoopTest::getTestCaseName(const testing::TestParamInfo<StaticShapeLoopParams> &obj) {
@@ -148,15 +146,15 @@ namespace LayerTestsDefinitions {
         int64_t dynamic_exit;
         int64_t axis;
         int64_t start_value;
-        InferenceEngine::SizeVector data_shape;
-        InferenceEngine::Precision data_prc;
+        CommonTestUtils::SizeVector data_shape;
+        ov::element::Type_t data_prc;
         std::string targetDevice;
-        auto args_papck = std::tie(static_iter_num, max_iter_num, dynamic_exit, axis);
-        std::map<std::string, std::string> configuration;
+        auto args_pack = std::tie(static_iter_num, max_iter_num, dynamic_exit, axis);
+        ov::AnyMap configuration;
         std::tie(
             unrolling,
             static_continue_cond,
-            args_papck,
+            args_pack,
             start_value,
             data_shape,
             data_prc,
@@ -173,7 +171,7 @@ namespace LayerTestsDefinitions {
         result << "start_value=" << std::to_string(start_value) << "_";
         result << "max_iter_num=" << std::to_string(max_iter_num) << "_";
         result << "IS=" << CommonTestUtils::vec2str(data_shape) << "_";
-        result << "netPRC=" << std::to_string(data_prc) << "_";
+        result << "netPRC=" << ov::element::Type(data_prc).get_type_name() << "_";
         result << "targetDevice=" << targetDevice << "_";
 
         auto res_str = result.str();
@@ -183,35 +181,34 @@ namespace LayerTestsDefinitions {
 
     void StaticShapeLoopTest::SetUp() {
         SKIP_IF_CURRENT_TEST_IS_DISABLED()
-        auto args_papck = std::tie(static_iter_num, max_iter_num, dynamic_exit, axis);
+        auto args_pack = std::tie(static_iter_num, max_iter_num, dynamic_exit, axis);
         std::tie(
             unrolling,
             static_continue_cond,
-            args_papck,
+            args_pack,
             start_value,
             data_shape,
             data_prc,
             targetDevice,
             configuration) = GetParam();
 
-        const auto prc = FuncTestUtils::PrecisionUtils::convertIE2nGraphPrc(data_prc);
-        const auto ngShape = ngraph::Shape{data_shape};
-        const auto scalarShape = ngraph::Shape{};
+        const auto ngShape = ov::Shape{data_shape};
+        const auto scalarShape = ov::Shape{};
 
-        ngraph::ParameterVector params{};
-        auto cond_input_create = [&params] (ngraph::element::Type prc, const ngraph::Shape &shape, int value = 0, bool is_static = false)
-                -> std::shared_ptr<ngraph::Node> {
+        ov::ParameterVector params{};
+        auto cond_input_create = [&params] (ov::element::Type_t prc, const ov::Shape &shape, int value = 0, bool is_static = false)
+                -> std::shared_ptr<ov::Node> {
             if (is_static)
-                return std::make_shared<ngraph::opset5::Constant>(prc, shape, value);
+                return std::make_shared<ov::op::v0::Constant>(prc, shape, value);
 
-            auto input = std::make_shared<ngraph::opset5::Parameter>(prc, shape);
+            auto input = std::make_shared<ov::op::v0::Parameter>(prc, shape);
             params.push_back(input);
             return input;
         };
 
-        auto start = cond_input_create(prc, ngShape);
-        auto count = cond_input_create(ngraph::element::i64, scalarShape, max_iter_num, static_iter_num);
-        auto skip  = cond_input_create(ngraph::element::boolean, scalarShape, true, static_continue_cond);
+        auto start = cond_input_create(data_prc, ngShape);
+        auto count = cond_input_create(ov::element::Type_t::i64, scalarShape, max_iter_num, static_iter_num);
+        auto skip  = cond_input_create(ov::element::Type_t::boolean, scalarShape, true, static_continue_cond);
 
         //
         //      count skip  start         count skip      start
@@ -227,24 +224,24 @@ namespace LayerTestsDefinitions {
         //           Full loop              Dynamic exit loop
         //           n_iter = count         n_iter = ex_val
         //
-        auto b_indx = std::make_shared<ngraph::opset5::Parameter>(ngraph::element::i64, ngraph::Shape{});
-        auto b_data = std::make_shared<ngraph::opset5::Parameter>(prc, ngShape);
-        auto b_indx_cast = std::make_shared<ngraph::opset5::Convert>(b_indx, prc);
-        auto b_add  = std::make_shared<ngraph::opset5::Add>(b_data, b_indx_cast);
+        auto b_indx = std::make_shared<ov::op::v0::Parameter>(ov::element::Type_t::i64, ov::Shape{});
+        auto b_data = std::make_shared<ov::op::v0::Parameter>(data_prc, ngShape);
+        auto b_indx_cast = std::make_shared<ov::op::v0::Convert>(b_indx, data_prc);
+        auto b_add  = std::make_shared<ov::op::v1::Add>(b_data, b_indx_cast);
 
-        std::shared_ptr<ngraph::Node> b_cond;
+        std::shared_ptr<ov::Node> b_cond;
         if (dynamic_exit == -1) {
-            b_cond = std::make_shared<ngraph::opset5::Constant>(ngraph::element::boolean, ngraph::Shape{}, true);
+            b_cond = std::make_shared<ov::op::v0::Constant>(ov::element::Type_t::boolean, ov::Shape{}, true);
         } else {
-            auto b_exit_value = std::make_shared<ngraph::opset5::Constant>(ngraph::element::i64, scalarShape, dynamic_exit);
-            b_cond = std::make_shared<ngraph::opset5::Less>(b_indx, b_exit_value);
+            auto b_exit_value = std::make_shared<ov::op::v0::Constant>(ov::element::Type_t::i64, scalarShape, dynamic_exit);
+            b_cond = std::make_shared<ov::op::v1::Less>(b_indx, b_exit_value);
         }
 
-        auto body = std::make_shared<ngraph::Function>(
-                ngraph::OutputVector    {b_cond, b_add},    // TODO: check with reverse
-                ngraph::ParameterVector {b_indx, b_data});  // TODO: check with reverse
+        auto body = std::make_shared<ov::Model>(
+                ov::OutputVector    {b_cond, b_add},    // TODO: check with reverse
+                ov::ParameterVector {b_indx, b_data});  // TODO: check with reverse
 
-        auto loop = std::make_shared<ngraph::opset5::Loop>(count, skip);
+        auto loop = std::make_shared<ov::op::v5::Loop>(count, skip);
         loop->set_function(body);
         loop->set_special_body_ports({0, 0});
         loop->set_merged_input(b_data, start, b_add);
@@ -253,29 +250,26 @@ namespace LayerTestsDefinitions {
         else
             loop->get_concatenated_slices(b_add, 0, 1, 1, -1, axis);
 
-        function = std::make_shared<ngraph::Function>(
-                ngraph::OutputVector {loop},
+        model = std::make_shared<ov::Model>(
+                ov::OutputVector {loop},
                 params);
         if (unrolling) {
-            ngraph::pass::Manager manager;
+            ov::pass::Manager manager;
             manager.register_pass<ov::pass::UnrollTensorIterator>();
-            manager.run_passes(function);
+            manager.run_passes(model);
         }
     }
 
-    InferenceEngine::Blob::Ptr StaticShapeLoopTest::GenerateInput(const InferenceEngine::InputInfo &info) const {
-        auto tdesc = info.getTensorDesc();
-        auto blob = make_blob_with_precision(tdesc);
-        blob->allocate();
+    ov::Tensor StaticShapeLoopTest::GenerateInput(ov::element::Type prc, const ov::Shape& shape) const {
+        auto tensor = ov::Tensor(prc, shape);
 
-        if (tdesc.getLayout() == InferenceEngine::SCALAR) {
-            auto scalar_1d = CommonTestUtils::make_reshape_view(blob, {1});
-            CommonTestUtils::fill_data_with_broadcast(scalar_1d, 0, {static_cast<float>(max_iter_num)});
+        if (0 == shape.size()) {
+            auto tensor_1d = CommonTestUtils::make_reshape_view(tensor, {1});
+            CommonTestUtils::fill_data_with_broadcast(tensor_1d, 0, {static_cast<float>(max_iter_num)});
         } else {
-            CommonTestUtils::fill_data_with_broadcast(blob, 0, {static_cast<float>(start_value)});
+            CommonTestUtils::fill_data_with_broadcast(tensor, 0, {static_cast<float>(start_value)});
         }
-
-        return blob;
+        return tensor;
     }
 
     int64_t StaticShapeLoopTest::actual_n_iter() {
@@ -287,8 +281,8 @@ namespace LayerTestsDefinitions {
                         max_iter_num == -1 ? INF_N_ITER : max_iter_num);
     }
 
-    // Predefined ref output
-    std::vector<std::pair<ngraph::element::Type, std::vector<std::uint8_t>>> StaticShapeLoopTest::PredefinedRefs() {
+    //Predefined ref output
+    std::vector<std::pair<ov::element::Type, std::vector<std::uint8_t>>> StaticShapeLoopTest::PredefinedRefs() {
         bool auto_concat_out = (axis != -1);
         const auto n_iter = actual_n_iter();
 
@@ -296,12 +290,10 @@ namespace LayerTestsDefinitions {
         if (auto_concat_out)
             ref_shape[axis] *= n_iter;
 
-        using namespace CommonTestUtils;
-        InferenceEngine::TensorDesc tdesc {data_prc, ref_shape, InferenceEngine::TensorDesc::getLayoutByDims(ref_shape)};
-        std::pair<ngraph::element::Type, std::vector<uint8_t>> res;
-        res.first = function->get_result()->get_element_type();
-        res.second = std::vector<uint8_t>(byte_size(tdesc));
-        auto out = make_blob_with_precision(tdesc, res.second.data());
+        std::pair<ov::element::Type, std::vector<uint8_t>> res;
+        res.first = model->get_result()->get_element_type();
+        res.second = std::vector<uint8_t>(CommonTestUtils::byte_size(data_prc, ref_shape));
+        auto out = ov::Tensor(data_prc, ref_shape, res.second.data());
 
         std::vector<float> vals(n_iter);
         float val = start_value;
@@ -311,77 +303,75 @@ namespace LayerTestsDefinitions {
         }
 
         if (auto_concat_out)
-            fill_data_with_broadcast(out, axis, vals);
+            CommonTestUtils::fill_data_with_broadcast(out, axis, vals);
         else
-            fill_data_with_broadcast(out, 0, {val});  // broadcast scalar data
+            CommonTestUtils::fill_data_with_broadcast(out, 0, {val});  // broadcast scalar data
 
         return {res};
     }
 
-    void TrivialLoopTest::CreateSlicedLoop(size_t batch_size, size_t num_iteration, InferenceEngine::Precision iePrc,
-                                           InferenceEngine::SizeVector& ieShape) {
-        const auto prc = FuncTestUtils::PrecisionUtils::convertIE2nGraphPrc(iePrc);
-        const auto scalarShape = ngraph::Shape{};
+    void TrivialLoopTest::CreateSlicedLoop(size_t batch_size, size_t num_iteration, ov::element::Type prc,
+                                           CommonTestUtils::SizeVector& shape_vector) {
+        const auto scalarShape = ov::Shape{};
 
-        auto shape = ngraph::Shape{ieShape};
-        auto to_slice_shape = ngraph::Shape{ieShape};
+        ov::Shape shape{shape_vector};
+        ov::Shape to_slice_shape{shape};
         to_slice_shape[0] = batch_size;
 
-        auto to_slice = std::make_shared<ngraph::opset5::Parameter>(prc, to_slice_shape);
-        auto start = std::make_shared<ngraph::opset5::Constant>(prc, shape, 0);
-        auto count = std::make_shared<ngraph::opset5::Constant>(ngraph::element::i64, scalarShape, num_iteration);
-        auto icond = std::make_shared<ngraph::opset5::Constant>(ngraph::element::boolean, scalarShape, true);
+        auto to_slice = std::make_shared<ov::op::v0::Parameter>(prc, to_slice_shape);
+        auto start = std::make_shared<ov::op::v0::Constant>(prc, shape, 0);
+        auto count = std::make_shared<ov::op::v0::Constant>(ov::element::Type_t::i64, scalarShape, num_iteration);
+        auto icond = std::make_shared<ov::op::v0::Constant>(ov::element::Type_t::boolean, scalarShape, true);
 
         // Loop body
-        auto b_data = std::make_shared<ngraph::opset5::Parameter>(prc, shape);
-        auto b_recu = std::make_shared<ngraph::opset5::Parameter>(prc, shape);
-        auto b_add  = std::make_shared<ngraph::opset5::Add>(b_data, b_recu);
-        auto b_cond = std::make_shared<ngraph::opset5::Constant>(ngraph::element::boolean, scalarShape, true);
+        auto b_data = std::make_shared<ov::op::v0::Parameter>(prc, shape);
+        auto b_recu = std::make_shared<ov::op::v0::Parameter>(prc, shape);
+        auto b_add  = std::make_shared<ov::op::v1::Add>(b_data, b_recu);
+        auto b_cond = std::make_shared<ov::op::v0::Constant>(ov::element::Type_t::boolean, scalarShape, true);
 
-        auto body = std::make_shared<ngraph::Function>(
-                ngraph::OutputVector    {b_cond, b_add},
-                ngraph::ParameterVector {b_data, b_recu});
+        auto body = std::make_shared<ov::Model>(
+                ov::OutputVector    {b_cond, b_add},
+                ov::ParameterVector {b_data, b_recu});
 
-        auto loop = std::make_shared<ngraph::opset5::Loop>(count, icond);
+        auto loop = std::make_shared<ov::op::v5::Loop>(count, icond);
         loop->set_function(body);
         loop->set_special_body_ports({-1, 0});
         loop->set_sliced_input(b_data, to_slice, 0, 1, 1, -1, 0);
         loop->set_merged_input(b_recu, start, b_add);
         loop->get_iter_value(b_add, -1);
 
-        function = std::make_shared<ngraph::Function>(
-                ngraph::OutputVector    {loop},
-                ngraph::ParameterVector {to_slice});
+        model = std::make_shared<ov::Model>(
+                ov::OutputVector    {loop},
+                ov::ParameterVector {to_slice});
     }
 
-    void TrivialLoopTest::CreateSlicedLoopDynCondition(size_t batch_size, size_t num_iteration, InferenceEngine::Precision iePrc,
-                                           InferenceEngine::SizeVector& ieShape, size_t trip_count) {
-        auto shape = ngraph::Shape{ieShape};
-        auto to_slice_shape = ngraph::Shape{ieShape};
+    void TrivialLoopTest::CreateSlicedLoopDynCondition(size_t batch_size, size_t num_iteration, ov::element::Type prc,
+                                           CommonTestUtils::SizeVector& shape_vector, size_t trip_count) {
+        ov::Shape shape{shape_vector};
+        ov::Shape to_slice_shape{shape};
         to_slice_shape[0] = batch_size;
 
-        const auto prc = FuncTestUtils::PrecisionUtils::convertIE2nGraphPrc(iePrc);
-        const auto scalarShape = ngraph::Shape{};
+        const auto scalarShape = ov::Shape{};
 
-        auto to_slice = std::make_shared<ngraph::opset5::Parameter>(prc, to_slice_shape);
-        auto start = std::make_shared<ngraph::opset5::Constant>(prc, shape, 0);
-        auto exit_on = std::make_shared<ngraph::opset5::Constant>(ngraph::element::i64, scalarShape, num_iteration);
-        auto count = std::make_shared<ngraph::opset5::Constant>(ngraph::element::i64, scalarShape, trip_count);
-        auto icond = std::make_shared<ngraph::opset5::Constant>(ngraph::element::boolean, scalarShape, true);
+        auto to_slice = std::make_shared<ov::op::v0::Parameter>(prc, to_slice_shape);
+        auto start = std::make_shared<ov::op::v0::Constant>(prc, shape, 0);
+        auto exit_on = std::make_shared<ov::op::v0::Constant>(ov::element::Type_t::i64, scalarShape, num_iteration);
+        auto count = std::make_shared<ov::op::v0::Constant>(ov::element::Type_t::i64, scalarShape, trip_count);
+        auto icond = std::make_shared<ov::op::v0::Constant>(ov::element::Type_t::boolean, scalarShape, true);
 
         // Loop body
-        auto b_data = std::make_shared<ngraph::opset5::Parameter>(prc, shape);
-        auto b_recu = std::make_shared<ngraph::opset5::Parameter>(prc, shape);
-        auto b_add  = std::make_shared<ngraph::opset5::Add>(b_data, b_recu);
-        auto b_iter = std::make_shared<ngraph::opset5::Parameter>(ngraph::element::i64, scalarShape);
-        auto b_exit_on = std::make_shared<ngraph::opset5::Parameter>(ngraph::element::i64, scalarShape);
-        auto b_cond = std::make_shared<ngraph::opset5::Less>(b_iter, b_exit_on);
+        auto b_data = std::make_shared<ov::op::v0::Parameter>(prc, shape);
+        auto b_recu = std::make_shared<ov::op::v0::Parameter>(prc, shape);
+        auto b_add  = std::make_shared<ov::op::v1::Add>(b_data, b_recu);
+        auto b_iter = std::make_shared<ov::op::v0::Parameter>(ov::element::Type_t::i64, scalarShape);
+        auto b_exit_on = std::make_shared<ov::op::v0::Parameter>(ov::element::Type_t::i64, scalarShape);
+        auto b_cond = std::make_shared<ov::op::v1::Less>(b_iter, b_exit_on);
 
-        auto body = std::make_shared<ngraph::Function>(
-                ngraph::OutputVector    {b_cond, b_add},
-                ngraph::ParameterVector {b_data, b_recu, b_iter, b_exit_on});
+        auto body = std::make_shared<ov::Model>(
+                ov::OutputVector    {b_cond, b_add},
+                ov::ParameterVector {b_data, b_recu, b_iter, b_exit_on});
 
-        auto loop = std::make_shared<ngraph::opset5::Loop>(count, icond);
+        auto loop = std::make_shared<ov::op::v5::Loop>(count, icond);
         loop->set_function(body);
         loop->set_special_body_ports({2, 0});
         loop->set_sliced_input(b_data, to_slice, 0, 1, 1, -1, 0);
@@ -389,8 +379,8 @@ namespace LayerTestsDefinitions {
         loop->set_merged_input(b_recu, start, b_add);
         loop->get_iter_value(b_add, -1);
 
-        function = std::make_shared<ngraph::Function>(
-                ngraph::OutputVector    {loop},
-                ngraph::ParameterVector {to_slice});
+        model = std::make_shared<ov::Model>(
+                ov::OutputVector    {loop},
+                ov::ParameterVector {to_slice});
     }
 }  // namespace LayerTestsDefinitions

@@ -39,11 +39,10 @@ TEST_P(StaticShapeLoopTest, CompareWithPredefinedRefs) {
 
 TEST_P(TrivialLoopTest, PassThroughBody) {
     SKIP_IF_CURRENT_TEST_IS_DISABLED()
-    InferenceEngine::Precision iePrc;
-    InferenceEngine::SizeVector ieShape;
-    std::tie(iePrc, ieShape, targetDevice) = GetParam();
+    ov::element::Type prc;
+    CommonTestUtils::SizeVector ieShape;
+    std::tie(prc, ieShape, targetDevice) = GetParam();
 
-    const auto prc = FuncTestUtils::PrecisionUtils::convertIE2nGraphPrc(iePrc);
     const auto shape = ngraph::Shape{ieShape};
     const auto scalarShape = ngraph::Shape{};
 
@@ -66,28 +65,26 @@ TEST_P(TrivialLoopTest, PassThroughBody) {
     loop->set_invariant_input(b_data, start);
     loop->get_iter_value(b_data, -1);
 
-    function = std::make_shared<ngraph::Function>(
+    model = std::make_shared<ngraph::Function>(
             ngraph::OutputVector    {loop},
             ngraph::ParameterVector {start});
 
     // Precalculated ref blobs
-    auto blob = make_blob_with_precision({iePrc, ieShape, InferenceEngine::TensorDesc::getLayoutByDims(ieShape)});
-    blob->allocate();
-    CommonTestUtils::fill_data_with_broadcast(blob, 0, {10});
+    ov::Tensor tensor(prc, shape);
+    CommonTestUtils::fill_data_with_broadcast(tensor, 0, {10});
 
-    inputGens[""] = [&] (InferenceEngine::TensorDesc tdesc) { return blob; };
-    outputGens[""] = [&] (InferenceEngine::TensorDesc tdesc) { return blob; };
+    inputGen = [&] (ov::element::Type prc, const ov::Shape& shape) { return tensor; };
+    outputGen = [&] (ov::element::Type prc, const ov::Shape& shape) { return tensor; };
 
     Run();
 }
 
 TEST_P(TrivialLoopTest, UnusedInputBody) {
     SKIP_IF_CURRENT_TEST_IS_DISABLED()
-    InferenceEngine::Precision iePrc;
-    InferenceEngine::SizeVector ieShape;
-    std::tie(iePrc, ieShape, targetDevice) = GetParam();
+    ov::element::Type prc;
+    CommonTestUtils::SizeVector ieShape;
+    std::tie(prc, ieShape, targetDevice) = GetParam();
 
-    const auto prc = FuncTestUtils::PrecisionUtils::convertIE2nGraphPrc(iePrc);
     const auto shape = ngraph::Shape{ieShape};
     const auto scalarShape = ngraph::Shape{};
 
@@ -110,17 +107,16 @@ TEST_P(TrivialLoopTest, UnusedInputBody) {
     loop->set_invariant_input(b_data, start);
     loop->get_iter_value(b_data, -1);
 
-    function = std::make_shared<ngraph::Function>(
+    model = std::make_shared<ngraph::Function>(
             ngraph::OutputVector    {loop},
             ngraph::ParameterVector {start});
 
     // Precalculated ref blobs
-    auto blob = make_blob_with_precision({iePrc, ieShape, InferenceEngine::TensorDesc::getLayoutByDims(ieShape)});
-    blob->allocate();
-    CommonTestUtils::fill_data_with_broadcast(blob, 0, {10});
+    ov::Tensor tensor(prc, ieShape);
+    CommonTestUtils::fill_data_with_broadcast(tensor, 0, {10});
 
-    inputGens[""] = [&] (InferenceEngine::TensorDesc tdesc) { return blob; };
-    outputGens[""] = [&] (InferenceEngine::TensorDesc tdesc) { return blob; };
+    inputGen = [&] (ov::element::Type prc, const ov::Shape& shape) { return tensor; };
+    outputGen = [&] (ov::element::Type prc, const ov::Shape& shape) { return tensor; };
 
     Run();
 }
@@ -129,36 +125,36 @@ TEST_P(TrivialLoopTest, UnusedInputBody) {
 
 TEST_P(TrivialLoopTest, AutoSlicingInput_CheckPredefinedValues) {
     SKIP_IF_CURRENT_TEST_IS_DISABLED()
-    InferenceEngine::Precision iePrc;
-    InferenceEngine::SizeVector ieShape;
-    std::tie(iePrc, ieShape, targetDevice) = GetParam();
+    ov::element::Type prc;
+    CommonTestUtils::SizeVector ieShape;
+    std::tie(prc, ieShape, targetDevice) = GetParam();
     const size_t batch_size = 5;
     const size_t num_iteration = 3;
     ieShape[0] = 1;
     auto ieShape_to_slice = ieShape;
     ieShape_to_slice[0] = batch_size;
-    CreateSlicedLoop(batch_size, num_iteration, iePrc, ieShape);
-    Run();
+    CreateSlicedLoop(batch_size, num_iteration, prc, ieShape);
     // Precalculated ref blobs
-    auto blob = make_blob_with_precision({iePrc, ieShape_to_slice, InferenceEngine::TensorDesc::getLayoutByDims(ieShape_to_slice)});
-    blob->allocate();
+    ov::Tensor tensor(prc, ieShape_to_slice);
+
     std::vector<float> seq_raw_data(batch_size);
     std::iota(seq_raw_data.begin(), seq_raw_data.end(), 1);
-    CommonTestUtils::fill_data_with_broadcast(blob, 0, seq_raw_data);
+    CommonTestUtils::fill_data_with_broadcast(tensor, 0, seq_raw_data);
 
-    auto blob_ref = make_blob_with_precision({iePrc, ieShape, InferenceEngine::TensorDesc::getLayoutByDims(ieShape)});
-    blob_ref->allocate();
-    CommonTestUtils::fill_data_with_broadcast(blob_ref, 0, { num_iteration * (num_iteration + 1) / 2});
+    ov::Tensor tensor_ref(prc, ieShape);
+    CommonTestUtils::fill_data_with_broadcast(tensor_ref, 0, { num_iteration * (num_iteration + 1) / 2});
 
-    inputGens[""] = [&] (InferenceEngine::TensorDesc tdesc) { return blob; };
-    outputGens[""] = [&] (InferenceEngine::TensorDesc tdesc) { return blob_ref; };
+    inputGen = [&] (ov::element::Type prc, const ov::Shape& shape) { return tensor; };
+    outputGen = [&] (ov::element::Type prc, const ov::Shape& shape) { return tensor_ref; };
+
+    Run();
 }
 
 TEST_P(TrivialLoopTest, AutoSlicingInputWithDynCondition_CheckPredefinedValues) {
     SKIP_IF_CURRENT_TEST_IS_DISABLED()
-    InferenceEngine::Precision iePrc;
-    InferenceEngine::SizeVector ieShape;
-    std::tie(iePrc, ieShape, targetDevice) = GetParam();
+    ov::element::Type prc;
+    CommonTestUtils::SizeVector ieShape;
+    std::tie(prc, ieShape, targetDevice) = GetParam();
 
     // auto slicing size : 5
     // trip count limit  : 4
@@ -173,44 +169,42 @@ TEST_P(TrivialLoopTest, AutoSlicingInputWithDynCondition_CheckPredefinedValues) 
     auto ieShape_to_slice = ieShape;
     ieShape_to_slice[0] = batch_size;
 
-    CreateSlicedLoopDynCondition(batch_size, num_iteration, iePrc, ieShape, trip_count);
+    CreateSlicedLoopDynCondition(batch_size, num_iteration, prc, ieShape, trip_count);
     // Precalculated ref blobs
-    auto blob = make_blob_with_precision({iePrc, ieShape_to_slice, InferenceEngine::TensorDesc::getLayoutByDims(ieShape_to_slice)});
-    blob->allocate();
+    ov::Tensor tensor(prc, ieShape_to_slice);
     std::vector<float> seq_raw_data(batch_size);
     std::iota(seq_raw_data.begin(), seq_raw_data.end(), 1);
-    CommonTestUtils::fill_data_with_broadcast(blob, 0, seq_raw_data);
+    CommonTestUtils::fill_data_with_broadcast(tensor, 0, seq_raw_data);
 
-    auto blob_ref = make_blob_with_precision({iePrc, ieShape, InferenceEngine::TensorDesc::getLayoutByDims(ieShape)});
-    blob_ref->allocate();
+    ov::Tensor tensor_ref(prc, ieShape);
     const size_t real_iter = num_iteration + 1;
-    CommonTestUtils::fill_data_with_broadcast(blob_ref, 0, { real_iter * (real_iter + 1) / 2});
+    CommonTestUtils::fill_data_with_broadcast(tensor_ref, 0, { real_iter * (real_iter + 1) / 2});
 
-    inputGens[""] = [&] (InferenceEngine::TensorDesc tdesc) { return blob; };
-    outputGens[""] = [&] (InferenceEngine::TensorDesc tdesc) { return blob_ref; };
+    inputGen = [&] (ov::element::Type prc, const ov::Shape& shape) { return tensor; };
+    outputGen = [&] (ov::element::Type prc, const ov::Shape& shape) { return tensor_ref; };
 
     Run();
 }
 
 TEST_P(TrivialLoopTest, AutoSlicingInput_CheckReference) {
     SKIP_IF_CURRENT_TEST_IS_DISABLED()
-    InferenceEngine::Precision iePrc;
-    InferenceEngine::SizeVector ieShape;
-    std::tie(iePrc, ieShape, targetDevice) = GetParam();
+    ov::element::Type prc;
+    CommonTestUtils::SizeVector ieShape;
+    std::tie(prc, ieShape, targetDevice) = GetParam();
     const size_t batch_size = 5;
     const size_t num_iteration = 3;
     ieShape[0] = 1;
     auto ieShape_to_slice = ieShape;
     ieShape_to_slice[0] = batch_size;
-    CreateSlicedLoop(batch_size, num_iteration, iePrc, ieShape);
+    CreateSlicedLoop(batch_size, num_iteration, prc, ieShape);
     Run();
 }
 
 TEST_P(TrivialLoopTest, AutoSlicingInputWithDynCondition_CheckReference) {
     SKIP_IF_CURRENT_TEST_IS_DISABLED()
-    InferenceEngine::Precision iePrc;
-    InferenceEngine::SizeVector ieShape;
-    std::tie(iePrc, ieShape, targetDevice) = GetParam();
+    ov::element::Type prc;
+    CommonTestUtils::SizeVector ieShape;
+    std::tie(prc, ieShape, targetDevice) = GetParam();
 
     // auto slicing size : 5
     // trip count limit  : 4
@@ -225,7 +219,7 @@ TEST_P(TrivialLoopTest, AutoSlicingInputWithDynCondition_CheckReference) {
     auto ieShape_to_slice = ieShape;
     ieShape_to_slice[0] = batch_size;
 
-    CreateSlicedLoopDynCondition(batch_size, num_iteration, iePrc, ieShape, trip_count);
+    CreateSlicedLoopDynCondition(batch_size, num_iteration, prc, ieShape, trip_count);
     Run();
 }
 

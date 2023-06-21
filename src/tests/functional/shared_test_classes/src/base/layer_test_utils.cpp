@@ -16,6 +16,8 @@
 #include "common_test_utils/file_utils.hpp"
 #include "functional_test_utils/core_config.hpp"
 #include "ie_icore.hpp"
+#include "functional_test_utils/ov_plugin_cache.hpp"
+#include "transformations/convert_precision.hpp"
 
 namespace LayerTestsUtils {
 
@@ -663,3 +665,388 @@ std::map<std::string, std::string> &LayerTestsCommon::GetConfiguration() {
 }
 
 }  // namespace LayerTestsUtils
+
+
+namespace LayerTestsUtilsNew {
+
+LayerTestsCommon::LayerTestsCommon() : threshold(1e-2f), abs_threshold(-1.f) {
+    core = ov::test::utils::PluginCache::get().core();
+}
+
+void LayerTestsCommon::ConfigureNetwork() {
+    auto input_size = model->inputs().size();
+    auto output_size = model->outputs().size();
+    ov::preprocess::PrePostProcessor ppp(model);
+
+    for (size_t i = 0; i < input_size; i++) {
+        auto& input_info = ppp.input(i);
+        if (inLayout != "") {
+            input_info.tensor().set_layout(inLayout);
+            input_info.model().set_layout(inLayout);
+        }
+        if (inPrc != ov::element::Type_t::undefined) {
+            input_info.tensor().set_element_type(inPrc);
+        }
+    }
+
+    for (size_t i = 0; i < output_size; i++) {
+        auto& output_info = ppp.output(i);
+        if (outLayout != "") {
+            output_info.tensor().set_layout(outLayout);
+            output_info.model().set_layout(outLayout);
+        }
+        if (outPrc != ov::element::Type_t::undefined) {
+            output_info.tensor().set_element_type(outPrc);
+        }
+    }
+}
+
+void LayerTestsCommon::LoadNetwork() {
+    CoreConfiguration(this);
+    ConfigureNetwork();
+    compiled_model = core->compile_model(model, targetDevice, configuration);
+    infer_request = compiled_model.create_infer_request();
+}
+
+void LayerTestsCommon::ExpectLoadNetworkToThrow(const std::string& msg) {
+    std::string what;
+    try {
+        LoadNetwork();
+    } catch (const std::exception& e) {
+        what.assign(e.what());
+    }
+    EXPECT_STR_CONTAINS(what.c_str(), msg.c_str());
+}
+
+void LayerTestsCommon::ConfigureInferRequest() {
+    const auto& model_parames = model->get_parameters();
+    for (int i = 0; i < model_parames.size(); ++i) {
+        infer_request.set_tensor(model_parames[i], inputs[i]);
+    }
+}
+
+ov::Tensor LayerTestsCommon::GenerateInput(ov::element::Type prc, const ov::Shape& shape) const {
+    return ov::Tensor(prc, shape);
+}
+
+
+void LayerTestsCommon::GenerateInputs() {
+    inputs.clear();
+    const auto& model_parames = model->get_parameters();
+    for (int i = 0; i < model_parames.size(); ++i) {
+        auto input = infer_request.get_input_tensor(i);
+        infer_request.get_tensor(model_parames[i]);
+        inputs.emplace_back(GenerateInput(input.get_element_type(), input.get_shape()));
+    }
+}
+
+void LayerTestsCommon::Infer() {
+    ConfigureInferRequest();
+    infer_request.infer();
+}
+
+void LayerTestsCommon::Validate() {
+    if (model_ref == nullptr) {
+        model_ref = model->clone();
+    }
+    auto expectedOutputs = CalculateRefs();
+    const auto &actualOutputs = GetOutputs();
+
+    if (expectedOutputs.empty()) {
+        return;
+    }
+
+    OPENVINO_ASSERT(actualOutputs.size() == expectedOutputs.size(),
+    "nGraph interpreter has ", expectedOutputs.size(), " outputs, while IE ", actualOutputs.size());
+
+    Compare(expectedOutputs, actualOutputs);
+}
+
+std::vector<std::pair<ngraph::element::Type, std::vector<std::uint8_t>>> LayerTestsCommon::CalculateRefs() {
+    ConvertRefsParams();
+    model_ref->validate_nodes_and_infer_types();
+
+    auto ref_inputs = std::vector<std::vector<uint8_t>>(inputs.size());
+    auto ref_input_types = std::vector<ov::element::Type>(inputs.size());
+    for (std::size_t i = 0; i < inputs.size(); ++i) {
+        const auto &input = inputs[i];
+        const auto inputSize = input.get_byte_size();
+
+        auto &ref_input = ref_inputs[i];
+        ref_input.resize(inputSize);
+
+        const auto buffer = static_cast<uint8_t*>(input.data());
+        std::copy(buffer, buffer + inputSize, ref_input.data());
+
+        ref_input_types[i] = input.get_element_type();
+    }
+
+    const auto& outputs = compiled_model.outputs();
+    std::vector<ov::element::Type_t> convertType;
+    convertType.reserve(outputs.size());
+    for (const auto &output : outputs) {
+        convertType.push_back(output.get_element_type());
+    }
+
+    std::vector<std::pair<ngraph::element::Type, std::vector<std::uint8_t>>> expectedOutputs;
+    switch (refMode) {
+        case INTERPRETER: {
+            expectedOutputs = ngraph::helpers::interpreterFunction(model_ref, ref_inputs, ref_input_types);
+            break;
+        }
+        case CONSTANT_FOLDING: {
+            const auto &foldedFunc = ngraph::helpers::foldFunction(model_ref, ref_inputs, ref_input_types);
+            expectedOutputs = ngraph::helpers::getConstData(foldedFunc);
+            break;
+        }
+        case IE: {
+            // reference inference on device with other options and nGraph function has to be implemented here
+            break;
+        }
+    }
+
+    return expectedOutputs;
+}
+
+void LayerTestsCommon::ConvertRefsParams() {
+    ov::pass::ConvertPrecision(ov::element::Type_t::f16, ov::element::Type_t::f32).run_on_model(model_ref);
+    ov::pass::ConvertPrecision(ov::element::Type_t::bf16, ov::element::Type_t::f32).run_on_model(model_ref);
+}
+
+std::vector<ov::Tensor> LayerTestsCommon::GetOutputs() {
+    auto outputs = std::vector<ov::Tensor>{};
+    for (size_t i = 0; i < compiled_model.outputs().size(); i++) {
+        outputs.push_back(infer_request.get_output_tensor(i));
+    }
+    return outputs;
+}
+
+void LayerTestsCommon::SetRefMode(RefMode mode) {
+    refMode = mode;
+}
+
+std::shared_ptr<ngraph::Function> LayerTestsCommon::GetFunction() {
+    return model;
+}
+
+ov::AnyMap& LayerTestsCommon::GetConfiguration() {
+    return configuration;
+}
+
+
+void LayerTestsCommon::Run() {
+    bool isCurrentTestDisabled = FuncTestUtils::SkipTestsConfig::currentTestIsDisabled();
+
+    ov::test::utils::PassRate::Statuses status = isCurrentTestDisabled ?
+         ov::test::utils::PassRate::Statuses::SKIPPED :
+         ov::test::utils::PassRate::Statuses::CRASHED;
+
+    auto &s = ov::test::utils::OpSummary::getInstance();
+    s.setDeviceName(targetDevice);
+    s.updateOPsStats(model, status);
+
+    if (isCurrentTestDisabled)
+        GTEST_SKIP() << "Disabled test due to configuration" << std::endl;
+
+    if (model_ref == nullptr) {
+        model_ref = model->clone();
+        model_ref->set_friendly_name("refModel");
+    }
+
+    // in case of crash jump will be made and work will be continued
+    auto crashHandler = std::unique_ptr<CommonTestUtils::CrashHandler>(new CommonTestUtils::CrashHandler());
+
+    // place to jump in case of a crash
+    int jmpRes = 0;
+#ifdef _WIN32
+    jmpRes = setjmp(CommonTestUtils::env);
+#else
+    jmpRes = sigsetjmp(CommonTestUtils::env, 1);
+#endif
+    if (jmpRes == CommonTestUtils::JMP_STATUS::ok) {
+        crashHandler->StartTimer();
+        try {
+            LoadNetwork();
+            GenerateInputs();
+            Infer();
+            Validate();
+            s.updateOPsStats(model_ref, ov::test::utils::PassRate::Statuses::PASSED);
+        }
+        catch (const std::runtime_error &re) {
+            s.updateOPsStats(model_ref, ov::test::utils::PassRate::Statuses::FAILED);
+            GTEST_FATAL_FAILURE_(re.what());
+        } catch (const std::exception &ex) {
+            s.updateOPsStats(model_ref, ov::test::utils::PassRate::Statuses::FAILED);
+            GTEST_FATAL_FAILURE_(ex.what());
+        } catch (...) {
+            s.updateOPsStats(model_ref, ov::test::utils::PassRate::Statuses::FAILED);
+            GTEST_FATAL_FAILURE_("Unknown failure occurred.");
+        }
+    } else if (jmpRes == CommonTestUtils::JMP_STATUS::anyError) {
+        IE_THROW() << "Crash happens";
+    } else if (jmpRes == CommonTestUtils::JMP_STATUS::alarmErr) {
+        s.updateOPsStats(model_ref, ov::test::utils::PassRate::Statuses::HANGED);
+        IE_THROW() << "Crash happens";
+    }
+}
+
+void LayerTestsCommon::Compare(const std::vector<std::pair<ov::element::Type, std::vector<std::uint8_t>>> &expectedOutputs,
+                               const std::vector<ov::Tensor> &actualOutputs) {
+    Compare(expectedOutputs, actualOutputs, threshold);
+}
+
+void LayerTestsCommon::Compare(const std::vector<std::pair<ov::element::Type, std::vector<std::uint8_t>>> &expectedOutputs,
+                               const std::vector<ov::Tensor> &actualOutputs,
+                               float threshold, float abs_threshold) {
+    for (std::size_t outputIndex = 0; outputIndex < expectedOutputs.size(); ++outputIndex) {
+        const auto &expected = expectedOutputs[outputIndex];
+        const auto &actual = actualOutputs[outputIndex];
+        Compare(expected, actual, threshold, abs_threshold);
+    }
+}
+
+template <typename T_IE>
+inline void callCompare(const std::pair<ngraph::element::Type, std::vector<std::uint8_t>> &expected,
+                        const T_IE* actualBuffer, size_t size, float threshold, float abs_threshold) {
+    auto expectedBuffer = expected.second.data();
+    switch (expected.first) {
+        case ov::element::Type_t::boolean:
+        case ov::element::Type_t::u8:
+            LayerTestsCommon::Compare<T_IE, uint8_t>(reinterpret_cast<const uint8_t *>(expectedBuffer),
+                                                     actualBuffer, size, threshold, abs_threshold);
+            break;
+        case ov::element::Type_t::i8:
+            LayerTestsCommon::Compare<T_IE, int8_t>(reinterpret_cast<const int8_t *>(expectedBuffer),
+                                                    actualBuffer, size, threshold, abs_threshold);
+            break;
+        case ov::element::Type_t::u16:
+            LayerTestsCommon::Compare<T_IE, uint16_t>(reinterpret_cast<const uint16_t *>(expectedBuffer),
+                                                      actualBuffer, size, threshold, abs_threshold);
+            break;
+        case ov::element::Type_t::i16:
+            LayerTestsCommon::Compare<T_IE, int16_t>(reinterpret_cast<const int16_t *>(expectedBuffer),
+                                                     actualBuffer, size, threshold, abs_threshold);
+            break;
+        case ov::element::Type_t::u32:
+            LayerTestsCommon::Compare<T_IE, uint32_t>(reinterpret_cast<const uint32_t *>(expectedBuffer),
+                                                      actualBuffer, size, threshold, abs_threshold);
+            break;
+        case ov::element::Type_t::i32:
+            LayerTestsCommon::Compare<T_IE, int32_t>(reinterpret_cast<const int32_t *>(expectedBuffer),
+                                                     actualBuffer, size, threshold, abs_threshold);
+            break;
+        case ov::element::Type_t::u64:
+            LayerTestsCommon::Compare<T_IE, uint64_t>(reinterpret_cast<const uint64_t *>(expectedBuffer),
+                                                      actualBuffer, size, threshold, abs_threshold);
+            break;
+        case ov::element::Type_t::i64:
+            LayerTestsCommon::Compare<T_IE, int64_t>(reinterpret_cast<const int64_t *>(expectedBuffer),
+                                                     actualBuffer, size, threshold, abs_threshold);
+            break;
+        case ov::element::Type_t::bf16:
+            LayerTestsCommon::Compare<T_IE, ngraph::bfloat16>(reinterpret_cast<const ngraph::bfloat16 *>(expectedBuffer),
+                                                              actualBuffer, size, threshold, abs_threshold);
+            break;
+        case ov::element::Type_t::f16:
+            LayerTestsCommon::Compare<T_IE, ngraph::float16>(reinterpret_cast<const ngraph::float16 *>(expectedBuffer),
+                                                             actualBuffer, size, threshold, abs_threshold);
+            break;
+        case ov::element::Type_t::f32:
+            LayerTestsCommon::Compare<T_IE, float>(reinterpret_cast<const float *>(expectedBuffer),
+                                                   actualBuffer, size, threshold, abs_threshold);
+            break;
+        case ov::element::Type_t::f64:
+            LayerTestsCommon::Compare<T_IE, double>(reinterpret_cast<const double *>(expectedBuffer),
+                                                   actualBuffer, size, threshold, abs_threshold);
+            break;
+        case ov::element::Type_t::i4: {
+            auto expectedOut = ngraph::helpers::convertOutputPrecision(
+                    expected.second,
+                    expected.first,
+                    ov::element::Type_t::i8,
+                    size);
+            LayerTestsCommon::Compare<T_IE, int8_t>(reinterpret_cast<const int8_t *>(expectedOut.data()),
+                                                    actualBuffer, size, threshold, abs_threshold);
+            break;
+        }
+        case ov::element::Type_t::u4: {
+            auto expectedOut = ngraph::helpers::convertOutputPrecision(
+                    expected.second,
+                    expected.first,
+                    ov::element::Type_t::u8,
+                    size);
+            LayerTestsCommon::Compare<T_IE, uint8_t>(reinterpret_cast<const uint8_t *>(expectedOut.data()),
+                                                     actualBuffer, size, threshold, abs_threshold);
+            break;
+        }
+        case ov::element::Type_t::dynamic:
+        case ov::element::Type_t::undefined:
+            LayerTestsCommon::Compare<T_IE, T_IE>(reinterpret_cast<const T_IE *>(expectedBuffer), actualBuffer, size, threshold, abs_threshold);
+            break;
+        default: FAIL() << "Comparator for " << expected.first << " precision isn't supported";
+    }
+    return;
+}
+
+void LayerTestsCommon::Compare(const std::pair<ov::element::Type, std::vector<std::uint8_t>> &expected,
+                               const ov::Tensor &actual,
+                               float threshold,
+                               float abs_threshold) {
+    const auto &precision = actual.get_element_type();
+    auto k =  static_cast<float>(expected.first.size()) / precision.size();
+    // W/A for int4, uint4
+    if (expected.first == ov::element::Type_t::u4 || expected.first == ov::element::Type_t::i4) {
+        k /= 2;
+    } else if (expected.first == ov::element::Type_t::undefined || expected.first == ov::element::Type_t::dynamic) {
+        k = 1;
+    }
+    ASSERT_EQ(expected.second.size(), actual.get_byte_size() * k);
+
+    const auto actualBuffer = actual.data();
+
+    const auto &size = actual.get_size();
+    switch (precision) {
+        case ov::element::Type_t::boolean:
+        case ov::element::Type_t::u8:
+            callCompare<uint8_t>(expected, reinterpret_cast<const uint8_t *>(actualBuffer), size, threshold, abs_threshold);
+            break;
+        case ov::element::Type_t::i8:
+            callCompare<int8_t>(expected, reinterpret_cast<const int8_t *>(actualBuffer), size, threshold, abs_threshold);
+            break;
+        case ov::element::Type_t::u16:
+            callCompare<uint16_t>(expected, reinterpret_cast<const uint16_t *>(actualBuffer), size, threshold, abs_threshold);
+            break;
+        case ov::element::Type_t::i16:
+            callCompare<int16_t>(expected, reinterpret_cast<const int16_t *>(actualBuffer), size, threshold, abs_threshold);
+            break;
+        case ov::element::Type_t::u32:
+            callCompare<uint32_t>(expected, reinterpret_cast<const uint32_t *>(actualBuffer), size, threshold, abs_threshold);
+            break;
+        case ov::element::Type_t::i32:
+            callCompare<int32_t>(expected, reinterpret_cast<const int32_t *>(actualBuffer), size, threshold, abs_threshold);
+            break;
+        case ov::element::Type_t::u64:
+            callCompare<uint64_t>(expected, reinterpret_cast<const uint64_t *>(actualBuffer), size, threshold, abs_threshold);
+            break;
+        case ov::element::Type_t::i64:
+            callCompare<int64_t>(expected, reinterpret_cast<const int64_t *>(actualBuffer), size, threshold, abs_threshold);
+            break;
+        case ov::element::Type_t::bf16:
+            callCompare<ngraph::bfloat16>(expected, reinterpret_cast<const ov::bfloat16 *>(actualBuffer), size, threshold, abs_threshold);
+            break;
+        case ov::element::Type_t::f16:
+            callCompare<ngraph::float16>(expected, reinterpret_cast<const ov::float16 *>(actualBuffer), size, threshold, abs_threshold);
+            break;
+        case ov::element::Type_t::f32:
+            callCompare<float>(expected, reinterpret_cast<const float *>(actualBuffer), size, threshold, abs_threshold);
+            break;
+        case ov::element::Type_t::f64:
+            callCompare<double>(expected, reinterpret_cast<const double *>(actualBuffer), size, threshold, abs_threshold);
+            break;
+        default:
+            FAIL() << "Comparator for " << precision << " precision isn't supported";
+    }
+}
+
+
+}  // namespace LayerTestsUtilsNew

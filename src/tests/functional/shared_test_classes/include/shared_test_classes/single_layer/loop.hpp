@@ -25,11 +25,11 @@ using LoopParams = typename std::tuple<
         bool,                                                              // BodyCondition value, if it is a Const
         int64_t,                                                           // TripCount, -1 means infinity
         std::vector<std::pair<std::vector<size_t>, LOOP_IN_TYPE>>,         // inputs
-        InferenceEngine::Precision,                                        // Network precision
+        ov::element::Type_t,                                        // Network precision
         std::string>;                                                      // Device name
 
 class LoopTest : public testing::WithParamInterface<LoopParams>,
-                 virtual public LayerTestsUtils::LayerTestsCommon {
+                 virtual public LayerTestsUtilsNew::LayerTestsCommon {
 public:
     static std::string getTestCaseName(const testing::TestParamInfo<LoopParams> &obj);
 
@@ -48,10 +48,10 @@ using StaticShapeLoopParams = typename std::tuple<
             int64_t
             >,
         int64_t,
-        InferenceEngine::SizeVector,
-        InferenceEngine::Precision,
+        CommonTestUtils::SizeVector,
+        ov::element::Type_t,
         std::string,
-        std::map<std::string, std::string>
+        ov::AnyMap
         >;
 
 /**
@@ -59,11 +59,11 @@ using StaticShapeLoopParams = typename std::tuple<
  * Total iteration count is dynamic.
  */
 class StaticShapeLoopTest : public testing::WithParamInterface<StaticShapeLoopParams>,
-                            virtual public LayerTestsUtils::LayerTestsCommon {
+                            virtual public LayerTestsUtilsNew::LayerTestsCommon {
 public:
     static std::string getTestCaseName(const testing::TestParamInfo<StaticShapeLoopParams> &obj);
-    InferenceEngine::Blob::Ptr GenerateInput(const InferenceEngine::InputInfo &info) const override;
-    std::vector<std::pair<ngraph::element::Type, std::vector<std::uint8_t>>> PredefinedRefs();
+    ov::Tensor GenerateInput(ov::element::Type prc, const ov::Shape& shape) const override;
+    std::vector<std::pair<ov::element::Type, std::vector<std::uint8_t>>> PredefinedRefs();
 
 private:
     bool unrolling;             // unroll Loop
@@ -73,8 +73,8 @@ private:
     int64_t dynamic_exit;       // -1 means always true
     int64_t axis;               // -1 means no auto concatenation
     int64_t start_value;
-    InferenceEngine::SizeVector data_shape;
-    InferenceEngine::Precision data_prc;
+    CommonTestUtils::SizeVector data_shape;
+    ngraph::element::Type_t data_prc;
 
     int64_t actual_n_iter();
 
@@ -83,66 +83,43 @@ protected:
 };
 
 
-class TrivialLoopTest : public testing::WithParamInterface<LayerTestsUtils::basicParams>,
-                        virtual public LayerTestsUtils::LayerTestsCommon {
+class TrivialLoopTest : public testing::WithParamInterface<LayerTestsUtilsNew::basicParamsNew>,
+                        virtual public LayerTestsUtilsNew::LayerTestsCommon {
 protected:
-    using RefBlobGenerator = std::function<InferenceEngine::Blob::Ptr (const InferenceEngine::TensorDesc &info)>;
-    std::map<std::string, RefBlobGenerator> inputGens, outputGens;
+    using RefTensorGenerator = std::function<ov::Tensor (ov::element::Type prc, const ov::Shape& shape)>;
+    RefTensorGenerator inputGen, outputGen;
 
-    void CreateSlicedLoop(size_t batch_size, size_t num_iteration, InferenceEngine::Precision iePrc,
-                          InferenceEngine::SizeVector& ieShape);
-    void CreateSlicedLoopDynCondition(size_t batch_size, size_t num_iteration, InferenceEngine::Precision iePrc,
-                          InferenceEngine::SizeVector& ieShape, size_t trip_count);
-    InferenceEngine::Blob::Ptr GenerateInput(const InferenceEngine::InputInfo &info) const override {
-        auto found = inputGens.find(info.name());
-        if (found != inputGens.end()) {
-            return found->second(info.getTensorDesc());
+    void CreateSlicedLoop(size_t batch_size, size_t num_iteration, ov::element::Type prc,
+                          CommonTestUtils::SizeVector& shape_vector);
+    void CreateSlicedLoopDynCondition(size_t batch_size, size_t num_iteration, ov::element::Type prc,
+                          CommonTestUtils::SizeVector& shape_vector, size_t trip_count);
+
+    ov::Tensor GenerateInput(ov::element::Type prc, const ov::Shape& shape) const override {
+        if (!!inputGen) {
+            return inputGen(prc, shape);
         }
 
-        found = inputGens.find("");
-        if (found != inputGens.end()) {
-            return found->second(info.getTensorDesc());
-        }
-
-        return LayerTestsCommon::GenerateInput(info);
+        return LayerTestsCommon::GenerateInput(prc, shape);
     }
 
-    std::vector<std::pair<ngraph::element::Type, std::vector<std::uint8_t>>> CalculateRefs() override {
-        if (outputGens.empty())
+    std::vector<std::pair<ov::element::Type, std::vector<std::uint8_t>>> CalculateRefs() override {
+        if (!outputGen)
             return LayerTestsCommon::CalculateRefs();
 
-        const auto results = function->get_results();
-        const auto outs_info = cnnNetwork.getOutputsInfo();
-        const auto num_out_blob = results.size();
+        const auto& outputs = GetOutputs();
 
-        std::vector<std::pair<ngraph::element::Type, std::vector<std::uint8_t>>> res_collection(num_out_blob);
+        std::vector<std::pair<ov::element::Type, std::vector<std::uint8_t>>> res_collection(outputs.size());
 
-        for (size_t i = 0; i < num_out_blob; i++) {
-            // TODO: name of original NG result doesn't match with outs after conversion.
-            //       Expected : auto name = results[i]->get_friendly_name();
-            auto name = results[i]->get_input_node_ptr(0)->get_friendly_name();
-            auto data = outs_info.at(name);
-            IE_ASSERT(data != nullptr);
-
-            RefBlobGenerator generator;
-            auto found = outputGens.find(name);
-            if (found != outputGens.end()) {
-                generator = found->second;
-            } else {
-                found = outputGens.find("");
-                if (found != outputGens.end()) {
-                    generator = found->second;
-                }
-            }
-
-            IE_ASSERT(generator != nullptr) << "Test output generator is not specified";
-            auto blob = generator(data->getTensorDesc());
-            auto blob_size = blob->byteSize();
-            auto blob_ptr = blob->buffer().as<uint8_t*>();
+        for (size_t i = 0; i < outputs.size(); i++) {
+            const auto& output = outputs[i];
+            outputGen(output.get_element_type(), output.get_shape());
+            auto data_ptr = static_cast<uint8_t *>(output.data());
+            auto data_size = output.get_byte_size();
 
             auto &res = res_collection[i];
-            res.second.resize(blob_size);
-            std::copy(blob_ptr, blob_ptr + blob_size, res.second.begin());
+            res.first = output.get_element_type();
+            res.second.resize(data_size);
+            std::copy(data_ptr, data_ptr + data_size, res.second.begin());
         }
         return res_collection;
     }

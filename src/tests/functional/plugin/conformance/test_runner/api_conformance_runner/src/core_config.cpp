@@ -3,6 +3,7 @@
 //
 
 #include "functional_test_utils/core_config.hpp"
+#include "functional_test_utils/ov_plugin_cache.hpp"
 #include "common_test_utils/file_utils.hpp"
 #include "openvino/util/file_util.hpp"
 

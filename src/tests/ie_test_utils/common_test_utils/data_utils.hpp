@@ -98,6 +98,7 @@ void fill_data_const(const ov::Tensor& tensor, float val);
  * @return size in bytes
  */
 size_t byte_size(const InferenceEngine::TensorDesc &tdesc);
+size_t byte_size(const ov::element::Type_t& prc, SizeVector &dims);
 
 template<typename T>
 inline void fill_roi_raw_ptr(T* data, size_t data_size, const uint32_t range, const int32_t height, const int32_t width, const float omega,

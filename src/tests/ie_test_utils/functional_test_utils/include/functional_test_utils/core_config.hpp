@@ -7,3 +7,4 @@
 #include "shared_test_classes/base/layer_test_utils.hpp"
 
 void CoreConfiguration(LayerTestsUtils::LayerTestsCommon* test);
+void CoreConfiguration(LayerTestsUtilsNew::LayerTestsCommon* test);
