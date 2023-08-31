@@ -287,7 +287,7 @@ void GRUSequenceTestNew::SetUp() {
     }
 
     std::vector<ov::test::InputShape> input_shapes;
-    for (const auto& param : params) {
+    for (auto&& param : function->get_parameters()) {
         input_shapes.push_back({{}, {param->get_shape()}});
     }
     init_input_shapes(input_shapes);

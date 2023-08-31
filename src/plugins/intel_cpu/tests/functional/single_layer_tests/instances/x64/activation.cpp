@@ -15,6 +15,8 @@ namespace CPULayerTestsDefinitions  {
 namespace Activation {
 namespace {
 
+using ngraph::helpers::ActivationTypes;
+
 const std::vector<Precision>& netPrc() {
     static const std::vector<Precision> netPrc {
         Precision::FP32,

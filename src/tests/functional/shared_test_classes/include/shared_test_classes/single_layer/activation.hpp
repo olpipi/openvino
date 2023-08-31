@@ -18,10 +18,13 @@
 
 #include "functional_test_utils/blob_utils.hpp"
 #include "shared_test_classes/base/layer_test_utils.hpp"
+#include "shared_test_classes/base/ov_subgraph.hpp"
 #include "common_test_utils/common_utils.hpp"
 
 #include "ngraph_functions/utils/ngraph_helpers.hpp"
 #include "ngraph_functions/builders.hpp"
+
+#include "common_test_utils/test_enums.hpp"
 
 namespace LayerTestsDefinitions {
 
@@ -118,3 +121,97 @@ public:
 };
 
 }  // namespace LayerTestsDefinitions
+
+namespace ov {
+namespace test {
+using ov::test::utils::ActivationTypes;
+
+static std::map<ActivationTypes, std::string> activationNames = {
+        {ActivationTypes::Sigmoid,               "Sigmoid"},
+        {ActivationTypes::Tanh,                  "Tanh"},
+        {ActivationTypes::Relu,                  "Relu"},
+        {ActivationTypes::LeakyRelu,             "LeakyRelu"},
+        {ActivationTypes::Exp,                   "Exp"},
+        {ActivationTypes::Log,                   "Log"},
+        {ActivationTypes::Sign,                  "Sign"},
+        {ActivationTypes::Abs,                   "Abs"},
+        {ActivationTypes::Clamp,                 "Clamp"},
+        {ActivationTypes::Negative,              "Negative"},
+        {ActivationTypes::Acos,                  "Acos"},
+        {ActivationTypes::Acosh,                 "Acosh"},
+        {ActivationTypes::Asin,                  "Asin"},
+        {ActivationTypes::Asinh,                 "Asinh"},
+        {ActivationTypes::Atan,                  "Atan"},
+        {ActivationTypes::Atanh,                  "Atanh"},
+        {ActivationTypes::Cos,                   "Cos"},
+        {ActivationTypes::Cosh,                  "Cosh"},
+        {ActivationTypes::Floor,                 "Floor"},
+        {ActivationTypes::Sin,                   "Sin"},
+        {ActivationTypes::Sinh,                  "Sinh"},
+        {ActivationTypes::Sqrt,                  "Sqrt"},
+        {ActivationTypes::Tan,                   "Tan"},
+        {ActivationTypes::Elu,                   "Elu"},
+        {ActivationTypes::Erf,                   "Erf"},
+        {ActivationTypes::HardSigmoid,           "HardSigmoid"},
+        {ActivationTypes::Selu,                  "Selu"},
+        {ActivationTypes::Sigmoid,               "Sigmoid"},
+        {ActivationTypes::Tanh,                  "Tanh"},
+        {ActivationTypes::Relu,                  "Relu"},
+        {ActivationTypes::LeakyRelu,             "LeakyRelu"},
+        {ActivationTypes::Exp,                   "Exp"},
+        {ActivationTypes::Log,                   "Log"},
+        {ActivationTypes::Sign,                  "Sign"},
+        {ActivationTypes::Abs,                   "Abs"},
+        {ActivationTypes::Gelu,                  "Gelu"},
+        {ActivationTypes::Ceiling,               "Ceiling"},
+        {ActivationTypes::PReLu,                 "PReLu"},
+        {ActivationTypes::Mish,                  "Mish"},
+        {ActivationTypes::HSwish,                "HSwish"},
+        {ActivationTypes::SoftPlus,              "SoftPlus"},
+        {ActivationTypes::Swish,                 "Swish"},
+        {ActivationTypes::HSigmoid,              "HSigmoid"},
+        {ActivationTypes::RoundHalfToEven,       "RoundHalfToEven"},
+        {ActivationTypes::RoundHalfAwayFromZero, "RoundHalfAwayFromZero"},
+        {ActivationTypes::GeluErf,               "GeluErf"},
+        {ActivationTypes::GeluTanh,              "GeluTanh"},
+        {ActivationTypes::SoftSign,              "SoftSign"},
+};
+
+typedef std::tuple<
+        std::pair<ActivationTypes, std::vector<float>>, // Activation type and constant value
+        ov::element::Type,
+        ov::element::Type,    // Input precision
+        ov::element::Type,    // Output precision
+        std::pair<std::vector<size_t>, std::vector<size_t>>,
+        std::string> activationParams;
+
+class ActivationLayerTestNew : public testing::WithParamInterface<activationParams>,
+                            virtual public ov::test::SubgraphBaseTest {
+public:
+    ActivationTypes activationType;
+    static std::string getTestCaseName(const testing::TestParamInfo<activationParams> &obj);
+protected:
+    void SetUp() override;
+};
+
+class ActivationParamLayerTestNew : public ActivationLayerTestNew {
+protected:
+    void SetUp() override;
+
+private:
+    void generate_inputs(const std::vector<ov::Shape>& targetInputStaticShapes) override;
+    void generateActivationBlob(std::vector<float> constantsValue);
+    ov::ParameterVector createActivationParams(ov::element::Type type, std::vector<size_t> inShape = {});
+
+private:
+    std::vector<float> constantsValue;
+};
+
+class ActivationDynamicLayerTestNew : public ActivationLayerTestNew {
+public:
+    std::unordered_set<size_t> static_dims;
+    void run() override;
+};
+
+} //  namespace test
+} //  namespace ov

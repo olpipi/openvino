@@ -13,6 +13,8 @@ using namespace ov::test;
 
 namespace CPULayerTestsDefinitions  {
 
+using ngraph::helpers::ActivationTypes;
+
 std::string ActivationLayerCPUTest::getTestCaseName(const testing::TestParamInfo<ActivationLayerCPUTestParamSet> &obj) {
     std::vector<ov::test::InputShape> inputShapes;
     std::vector<size_t> activationShapes;

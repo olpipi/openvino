@@ -33,3 +33,33 @@ TEST_P(ActivationDynamicLayerTest, QueryNetwork) {
 }
 
 }  // namespace LayerTestsDefinitions
+
+namespace ov {
+namespace test {
+
+TEST_P(ActivationLayerTestNew, CompareWithRefs) {
+    run();
+}
+
+TEST_P(ActivationParamLayerTestNew, CompareWithRefs) {
+    run();
+}
+
+TEST_P(ActivationDynamicLayerTestNew, CompareWithRefs) {
+    run();
+}
+
+TEST_P(ActivationLayerTestNew, QueryNetwork) {
+    query_model();
+}
+
+TEST_P(ActivationParamLayerTestNew, QueryNetwork) {
+    query_model();
+}
+
+TEST_P(ActivationDynamicLayerTestNew, QueryNetwork) {
+    query_model();
+}
+
+}  // namespace test
+}  // namespace ov
