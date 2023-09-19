@@ -1008,6 +1008,59 @@ ov::runtime::Tensor generate(const
     return tensor;
 }
 
+namespace experimental_detectron_detection_output {
+template <typename T>
+void fill_tensor(ov::Tensor& tensor, size_t port) {
+    std::memset(tensor.data(), static_cast<T>(1.0f), tensor.get_size());
+    auto raw_data_ptr = static_cast<T*>(tensor.data());
+    if (1 == port) {
+        raw_data_ptr[2] = static_cast<T>(10.0f);
+        raw_data_ptr[3] = static_cast<T>(10.0f);
+        if (tensor.get_size() >= 16)
+            raw_data_ptr[16] = static_cast<T>(4.0f);
+        if (tensor.get_size() >= 18) {
+            raw_data_ptr[17] = static_cast<T>(8.0f);
+            raw_data_ptr[18] = static_cast<T>(5.0f);
+        }
+    } else if (2 == port) {
+        raw_data_ptr[0] = static_cast<T>(5.0f);
+        if (tensor.get_size() >= 18)
+            raw_data_ptr[18] = static_cast<T>(4.0f);
+        if (tensor.get_size() >= 35)
+            raw_data_ptr[35] = static_cast<T>(8.0f);
+    }
+}
+} // namespace experimental_detectron_detection_output
+
+ov::runtime::Tensor generate(const
+                             std::shared_ptr<ov::op::v6::ExperimentalDetectronDetectionOutput>& node,
+                             size_t port,
+                             const ov::element::Type& elemType,
+                             const ov::Shape& targetShape) {
+    ov::Tensor tensor(elemType, targetShape);
+    #define CASE(X) case X: \
+        experimental_detectron_detection_output::fill_tensor<ov::fundamental_type_for<X>>(tensor, port);\
+        break;
+
+    switch (elemType) {
+        CASE(ov::element::i8)
+        CASE(ov::element::i16)
+        CASE(ov::element::i32)
+        CASE(ov::element::i64)
+        CASE(ov::element::u8)
+        CASE(ov::element::u16)
+        CASE(ov::element::u32)
+        CASE(ov::element::u64)
+        CASE(ov::element::bf16)
+        CASE(ov::element::f16)
+        CASE(ov::element::f32)
+        CASE(ov::element::f64)
+        default: OPENVINO_THROW("Unsupported element type: ", elemType);
+    }
+#undef CASE
+    return tensor;
+}
+
 template<typename T>
 ov::runtime::Tensor generateInput(const std::shared_ptr<ov::Node>& node,
                                   size_t port,
