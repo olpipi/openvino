@@ -27,25 +27,25 @@ public:
     AlignedBuffer(AlignedBuffer&& other);
     AlignedBuffer& operator=(AlignedBuffer&& other);
 
-    size_t size() const {
+    virtual size_t size() const {
         return m_byte_size;
     }
-    void* get_ptr(size_t offset) const {
+    virtual void* get_ptr(size_t offset) const {
         return m_aligned_buffer + offset;
     }
-    void* get_ptr() {
+    virtual void* get_ptr() {
         return m_aligned_buffer;
     }
-    const void* get_ptr() const {
+    virtual const void* get_ptr() const {
         return m_aligned_buffer;
     }
     template <typename T>
     T* get_ptr() {
-        return reinterpret_cast<T*>(m_aligned_buffer);
+        return reinterpret_cast<T*>(get_ptr());
     }
     template <typename T>
     const T* get_ptr() const {
-        return reinterpret_cast<const T*>(m_aligned_buffer);
+        return reinterpret_cast<const T*>(get_ptr());
     }
 
     template <typename T>
@@ -58,9 +58,9 @@ private:
     AlignedBuffer& operator=(const AlignedBuffer&) = delete;
 
 protected:
-    char* m_allocated_buffer;
-    char* m_aligned_buffer;
-    size_t m_byte_size;
+    mutable char* m_allocated_buffer;
+    mutable char* m_aligned_buffer;
+    mutable size_t m_byte_size;
 };
 
 template <>

@@ -26,6 +26,13 @@ public:
     virtual ~MappedMemory() = default;
 };
 
+
+class AsyncMemHolder : public MappedMemory {
+protected:
+    virtual bool wait_until_buffer_is_ready() const = 0;
+};
+
+
 /**
  * @brief Returns mapped memory for a file from provided path.
  * Instead of reading files, we can map the memory via mmap for Linux
@@ -36,6 +43,8 @@ public:
  */
 std::shared_ptr<ov::MappedMemory> load_mmap_object(const std::string& path);
 std::shared_ptr<ov::MappedMemory> load_read_file_object(const std::string& path);
+std::shared_ptr<ov::AsyncMemHolder> load_read_file_async_object(const std::string& path);
+
 
 #ifdef OPENVINO_ENABLE_UNICODE_PATH_SUPPORT
 
@@ -49,7 +58,7 @@ std::shared_ptr<ov::MappedMemory> load_read_file_object(const std::string& path)
  */
 std::shared_ptr<ov::MappedMemory> load_mmap_object(const std::wstring& path);
 std::shared_ptr<ov::MappedMemory> load_read_file_object(const std::wstring& path);
-
+std::shared_ptr<ov::AsyncMemHolder> load_read_file_async_object(const std::wstring& path);
 #endif  // OPENVINO_ENABLE_UNICODE_PATH_SUPPORT
 
 }  // namespace ov

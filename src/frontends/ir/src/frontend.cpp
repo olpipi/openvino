@@ -207,10 +207,8 @@ InputModel::Ptr FrontEnd::load_impl(const std::vector<ov::Any>& variants) const 
     }
     if (!weights_path.empty()) {
         if (enable_mmap) {
-            auto mapped_memory = ov::load_read_file_object(weights_path);
-            weights = std::make_shared<ov::SharedBuffer<std::shared_ptr<MappedMemory>>>(mapped_memory->data(),
-                                                                                        mapped_memory->size(),
-                                                                                        mapped_memory);
+            auto mapped_memory = ov::load_read_file_async_object(weights_path);
+            weights = std::make_shared<ov::SharedAsyncBuffer>(mapped_memory);
         } else {
             std::ifstream bin_stream;
             bin_stream.open(weights_path.c_str(), std::ios::binary);

@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
+#include <atomic>
+#include <condition_variable>
 #include <stdexcept>
 
 #include "openvino/util/file_util.hpp"
@@ -194,6 +196,124 @@ private:
     HandleHolder m_handle;
 };
 
+
+class ReadFileAsyncHolder : public ov::AsyncMemHolder {
+public:
+    ReadFileAsyncHolder() {
+        m_result_callback = [this](DWORD dwErrorCode, DWORD dwNumberOfBytesTransfered, LPOVERLAPPED lpOverlapped) {
+            if (0 != dwErrorCode || dwNumberOfBytesTransfered != m_size) {
+                m_read_status = Status::succeed;
+            } else {
+                m_read_status = Status::failed;
+            }
+            m_read_cv.notify_all();
+        };
+    }
+
+    char* data() noexcept override {
+        if (wait_until_buffer_is_ready()) {
+            return m_data.data();
+        } else {
+            return nullptr;
+        }
+    }
+    size_t size() const noexcept override {
+        if (wait_until_buffer_is_ready()) {
+            return m_size;
+        } else {
+            return 0;
+        }
+    }
+
+    void set(const std::string& path) {
+        // Note that file can't be changed (renamed/deleted) until it's unmapped. FILE_SHARE_DELETE flag allow
+        // rename/deletion, but it doesn't work with FAT32 filesystem (works on NTFS)
+        auto h = ::CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+        map(path, h);
+    }
+
+#ifdef OPENVINO_ENABLE_UNICODE_PATH_SUPPORT
+    void set(const std::wstring& path) {
+        // Note that file can't be changed (renamed/deleted) until it's unmapped. FILE_SHARE_DELETE flag allow
+        // rename/deletion, but it doesn't work with FAT32 filesystem (works on NTFS)
+        auto h = ::CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+        map(ov::util::wstring_to_string(path), h);
+    }
+#endif
+
+private:
+    void map(const std::string& path, HANDLE h) {
+        if (h == INVALID_HANDLE_VALUE) {
+            throw std::runtime_error("Can not open file " + path +
+                                     " for mapping. Ensure that file exists and has appropriate permissions");
+        }
+        m_handle = HandleHolder(h);
+
+        LARGE_INTEGER file_size_large;
+        if (::GetFileSizeEx(m_handle.get(), &file_size_large) == 0) {
+            throw std::runtime_error("Can not get file size for " + path);
+        }
+
+        m_size = static_cast<uint64_t>(file_size_large.QuadPart);
+        m_data.resize(m_size);
+
+        OVERLAPPED ol = {0};
+
+        using callback_t = void(DWORD, DWORD, LPOVERLAPPED);
+        using callback_pt = callback_t*;
+        callback_pt callback_ptr;
+        callback_ptr = m_result_callback.target<void(DWORD, DWORD, LPOVERLAPPED)>();
+
+
+        BOOL result = ReadFileEx(m_handle.get(),
+                                 m_data.data(),
+                                 m_data.size(),
+                                 &ol, callback_ptr);
+
+        if (!result) {
+            m_read_status = Status::failed;
+            auto error = GetLastError();
+            throw std::runtime_error("read error: %s" + GetLastError());
+        }
+        m_read_status = Status::in_progress;
+    }
+
+private:
+
+    std::function<void(DWORD, DWORD, LPOVERLAPPED)> m_result_callback;
+
+    bool wait_until_buffer_is_ready() const override {
+        Status current_status = m_read_status;
+        if (current_status == Status::succeed)
+            return true;
+        if (current_status == Status::failed || current_status == Status::undefined)
+            return false;
+
+        std::unique_lock<std::mutex> lk(read_mutex);
+        m_read_cv.wait(lk, [this]{ return m_read_status != Status::in_progress; });
+        if (m_read_status == Status::succeed)
+            return true;
+        else 
+            return false;
+    }
+
+    std::vector<char> m_data;
+    size_t m_size = 0;
+    HandleHolder m_handle;
+
+    enum class Status {
+        undefined = 0,
+        in_progress,
+        succeed,
+        failed
+    };
+
+    mutable std::atomic<Status> m_read_status = Status::undefined;
+    mutable std::condition_variable m_read_cv;
+    mutable std::mutex read_mutex;
+};
+
+
 std::shared_ptr<ov::MappedMemory> load_mmap_object(const std::string& path) {
     auto holder = std::make_shared<MapHolder>();
     holder->set(path);
@@ -206,6 +326,13 @@ std::shared_ptr<ov::MappedMemory> load_read_file_object(const std::string& path)
     return holder;
 }
 
+
+std::shared_ptr<ov::AsyncMemHolder> load_read_file_async_object(const std::string& path) {
+    auto holder = std::make_shared<ReadFileAsyncHolder>();
+    holder->set(path);
+    return holder;
+}
+
 #ifdef OPENVINO_ENABLE_UNICODE_PATH_SUPPORT
 
 std::shared_ptr<ov::MappedMemory> load_mmap_object(const std::wstring& path) {
@@ -214,8 +341,8 @@ std::shared_ptr<ov::MappedMemory> load_mmap_object(const std::wstring& path) {
     return holder;
 }
 
-std::shared_ptr<ov::MappedMemory> load_read_file_object(const std::wstring& path) {
-    auto holder = std::make_shared<ReadFileHolder>();
+std::shared_ptr<ov::AsyncMemHolder> load_read_file_async_object(const std::wstring& path) {
+    auto holder = std::make_shared<ReadFileAsyncHolder>();
     holder->set(path);
     return holder;
 }
