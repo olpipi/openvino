@@ -258,17 +258,10 @@ private:
         m_data.resize(m_size);
 
         OVERLAPPED ol = {0};
-
-        using callback_t = void(DWORD, DWORD, LPOVERLAPPED);
-        using callback_pt = callback_t*;
-        callback_pt callback_ptr;
-        callback_ptr = m_result_callback.target<void(DWORD, DWORD, LPOVERLAPPED)>();
-
-
         BOOL result = ReadFileEx(m_handle.get(),
                                  m_data.data(),
                                  m_data.size(),
-                                 &ol, callback_ptr);
+                                 &ol, [](DWORD, DWORD, LPOVERLAPPED) {});
 
         if (!result) {
             m_read_status = Status::failed;
@@ -280,18 +273,13 @@ private:
 
 private:
 
-    std::function<void(DWORD, DWORD, LPOVERLAPPED)> m_result_callback;
-
     bool wait_until_buffer_is_ready() const override {
-        Status current_status = m_read_status;
-        if (current_status == Status::succeed)
-            return true;
-        if (current_status == Status::failed || current_status == Status::undefined)
-            return false;
+        OVERLAPPED ol = {0};
+        ol.Internal = STATUS_PENDING;
+        LPDWORD bytes_red = 0;
+        auto result = GetOverlappedResult(m_handle.get(), &ol, &bytes_red, true);
 
-        std::unique_lock<std::mutex> lk(read_mutex);
-        m_read_cv.wait(lk, [this]{ return m_read_status != Status::in_progress; });
-        if (m_read_status == Status::succeed)
+        if (result && bytes_red == m_size)
             return true;
         else 
             return false;
