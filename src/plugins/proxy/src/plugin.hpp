@@ -41,6 +41,17 @@ public:
     std::shared_ptr<ov::ICompiledModel> import_model(std::istream& model,
                                                      const ov::SoPtr<ov::IRemoteContext>& context,
                                                      const ov::AnyMap& properties) const override;
+    
+    std::shared_ptr<ov::ICompiledModel> import_model(char* data_ptr,
+                                                             size_t data_size,
+                                                     const ov::AnyMap& properties) const override {
+        return nullptr;
+    };
+    std::shared_ptr<ov::ICompiledModel> import_model(char* data_ptr,
+                                                             size_t data_size,
+                                                             const ov::SoPtr<ov::IRemoteContext>& context,
+                                                             const ov::AnyMap& properties) const override{return nullptr;};
+
 
 private:
     std::vector<std::vector<std::string>> get_hidden_devices() const;

@@ -42,10 +42,22 @@ public:
     BinaryInputBuffer(std::istream& stream, engine& engine)
     : InputBuffer<BinaryInputBuffer>(this, engine), _stream(stream), _impl_params(nullptr) {}
 
+    BinaryInputBuffer(char* data, size_t size, engine& engine)
+        : InputBuffer<BinaryInputBuffer>(this, engine),
+          _impl_params(nullptr),
+          _stream(std::istringstream()){}
+
     void read(void* const data, std::streamsize size) {
-        auto const read_size = _stream.rdbuf()->sgetn(reinterpret_cast<char*>(data), size);
-        OPENVINO_ASSERT(read_size == size,
-            "[GPU] Failed to read " + std::to_string(size) + " bytes from stream! Read " + std::to_string(read_size));
+        if (_data_ptr) {
+            OPENVINO_ASSERT(_data_size >= size + _data_offset);
+            std::memcpy(data, _data_ptr + _data_offset, size);
+            _data_offset += size;        
+        } else {
+            auto const read_size = _stream.rdbuf()->sgetn(reinterpret_cast<char*>(data), size);
+            OPENVINO_ASSERT(read_size == size,
+                            "[GPU] Failed to read " + std::to_string(size) + " bytes from stream! Read " +
+                                std::to_string(read_size));
+        }
     }
 
     void setKernelImplParams(void* impl_params) { _impl_params = impl_params; }
@@ -57,6 +69,34 @@ public:
 private:
     std::istream& _stream;
     void* _impl_params;
+    char* _data_ptr = nullptr;
+    size_t _data_offset = 0;
+    size_t _data_size = 0;
+
+};
+
+class BinaryInputRawBuffer : public InputBuffer<BinaryInputRawBuffer> {
+public:
+    BinaryInputRawBuffer(char* data, size_t size, engine& engine)
+    : InputBuffer<BinaryInputRawBuffer>(this, engine), _data_ptr(data), _data_size(size), _impl_params(nullptr) {}
+
+    void read(void* const data, std::streamsize size) {
+        OPENVINO_ASSERT(_data_size >= size + _data_offset);
+        auto data_ptr = reinterpret_cast<char*>(data);
+        data_ptr = _data_ptr + _data_offset;
+        _data_offset += size;
+    }
+
+    void setKernelImplParams(void* impl_params) { _impl_params = impl_params; }
+    void* getKernelImplParams() const { return _impl_params; }
+
+private:
+
+    void* _impl_params;
+
+    char* _data_ptr = nullptr;
+    size_t _data_offset = 0;
+    size_t _data_size = 0;
 };
 
 template <typename T>
@@ -76,10 +116,26 @@ public:
 };
 
 template <typename T>
+class Serializer<BinaryInputRawBuffer, T, typename std::enable_if<std::is_arithmetic<T>::value>::type> {
+public:
+    static void load(BinaryInputRawBuffer& buffer, T& object) {
+        buffer.read(std::addressof(object), sizeof(object));
+    }
+};
+
+template <typename T>
 class Serializer<BinaryOutputBuffer, Data<T>> {
 public:
     static void save(BinaryOutputBuffer& buffer, const Data<T>& bin_data) {
         buffer.write(bin_data.data, static_cast<std::streamsize>(bin_data.number_of_bytes));
+    }
+};
+
+template <typename T>
+class Serializer<BinaryInputRawBuffer, Data<T>> {
+public:
+    static void load(BinaryInputRawBuffer& buffer, Data<T>& bin_data) {
+        buffer.read(bin_data.data, static_cast<std::streamsize>(bin_data.number_of_bytes));
     }
 };
 

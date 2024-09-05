@@ -1407,12 +1407,13 @@ ov::SoPtr<ov::ICompiledModel> ov::CoreImpl::load_model_from_cache(
 
     OPENVINO_ASSERT(cacheContent.cacheManager != nullptr);
     try {
-        cacheContent.cacheManager->read_cache_entry(cacheContent.blobId, [&](std::istream& networkStream) {
+        cacheContent.cacheManager->read_cache_entry(cacheContent.blobId, [&](char* data, size_t size) {
             OV_ITT_SCOPE(FIRST_INFERENCE,
                          ov::itt::domains::LoadTime,
                          "Core::load_model_from_cache::ReadStreamAndImport");
             try {
                 ov::CompiledBlobHeader header;
+
                 networkStream >> header;
                 if (header.get_file_info() != ov::ModelCache::calculate_file_info(cacheContent.modelPath)) {
                     // Original file is changed, don't use cache
@@ -1434,14 +1435,15 @@ ov::SoPtr<ov::ICompiledModel> ov::CoreImpl::load_model_from_cache(
                         OPENVINO_THROW("Version does not match");
                     }
                 }
-            } catch (...) {
+            } catch (std::exception& ex) {
+                auto message = ex.what();
                 throw HeaderException();
             }
 
             ov::AnyMap update_config = config;
             update_config[ov::loaded_from_cache.name()] = true;
-            compiled_model = context ? plugin.import_model(networkStream, context, update_config)
-                                     : plugin.import_model(networkStream, update_config);
+            compiled_model = context ? plugin.import_model(data, size, context, update_config)
+                                     : plugin.import_model(data, size, update_config);
         });
     } catch (const HeaderException&) {
         // For these exceptions just remove old cache and set that import didn't work

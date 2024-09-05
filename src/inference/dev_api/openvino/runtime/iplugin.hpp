@@ -171,7 +171,10 @@ public:
      */
     virtual std::shared_ptr<ov::ICompiledModel> import_model(std::istream& model,
                                                              const ov::AnyMap& properties) const = 0;
-
+    virtual std::shared_ptr<ov::ICompiledModel> import_model(char* data_ptr,
+                                                             size_t data_size,
+                                                             const ov::AnyMap& properties) const = 0;
+    
     /**
      * @brief Creates an compiled model from an previously exported model using plugin implementation
      *        and removes OpenVINO Runtime magic and plugin name
@@ -182,6 +185,11 @@ public:
      * @return An Compiled model
      */
     virtual std::shared_ptr<ov::ICompiledModel> import_model(std::istream& model,
+                                                             const ov::SoPtr<ov::IRemoteContext>& context,
+                                                             const ov::AnyMap& properties) const = 0;
+
+    virtual std::shared_ptr<ov::ICompiledModel> import_model(char* data_ptr,
+                                                             size_t data_size,
                                                              const ov::SoPtr<ov::IRemoteContext>& context,
                                                              const ov::AnyMap& properties) const = 0;
 

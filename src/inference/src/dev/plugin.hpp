@@ -54,8 +54,13 @@ public:
     ov::SupportedOpsMap query_model(const std::shared_ptr<const ov::Model>& model, const ov::AnyMap& properties) const;
 
     SoPtr<ov::ICompiledModel> import_model(std::istream& model, const ov::AnyMap& properties) const;
+    SoPtr<ov::ICompiledModel> import_model(char* data_ptr, size_t data_size, const ov::AnyMap& properties) const;
 
     SoPtr<ov::ICompiledModel> import_model(std::istream& networkModel,
+                                           const ov::SoPtr<ov::IRemoteContext>& context,
+                                           const ov::AnyMap& config) const;
+
+    SoPtr<ov::ICompiledModel> import_model(char* data_ptr, size_t data_size,
                                            const ov::SoPtr<ov::IRemoteContext>& context,
                                            const ov::AnyMap& config) const;
 

@@ -281,10 +281,45 @@ ov::SupportedOpsMap Plugin::query_model(const std::shared_ptr<const ov::Model>& 
     return res;
 }
 
+
 std::shared_ptr<ov::ICompiledModel> Plugin::import_model(std::istream& model, const ov::AnyMap& config) const {
     std::string device_id = get_device_id(config);
     auto context = get_default_context(device_id);
     return import_model(model, { context, nullptr }, config);
+}
+
+std::shared_ptr<ov::ICompiledModel> Plugin::import_model(char* data_ptr, size_t data_size, const ov::AnyMap& config) const {
+    std::string device_id = get_device_id(config);
+    auto context = get_default_context(device_id);
+    return import_model(data_ptr, data_size, { context, nullptr }, config);
+}
+
+std::shared_ptr<ov::ICompiledModel> Plugin::import_model(char* data_ptr, size_t data_size,
+                                                         const ov::SoPtr<ov::IRemoteContext>& context,
+                                                         const ov::AnyMap& orig_config) const {
+    OV_ITT_SCOPED_TASK(itt::domains::intel_gpu_plugin, "Plugin::ImportNetwork");
+
+    auto context_impl = get_context_impl(context);
+    auto device_id = ov::DeviceIDParser{context_impl->get_device_name()}.get_device_id();
+
+    // check ov::loaded_from_cache property and erase it due to not needed any more.
+    auto _orig_config = orig_config;
+    const auto& it = _orig_config.find(ov::loaded_from_cache.name());
+    bool loaded_from_cache = false;
+    if (it != _orig_config.end()) {
+        loaded_from_cache = it->second.as<bool>();
+        _orig_config.erase(it);
+    }
+
+    ExecutionConfig config = m_configs_map.at(device_id);
+    config.set_user_property(_orig_config);
+    config.apply_user_properties(context_impl->get_engine().get_device_info());
+
+    if (config.get_property(ov::cache_mode) == ov::CacheMode::OPTIMIZE_SIZE)
+        return nullptr;
+
+    cldnn::BinaryInputBuffer ib(data_ptr, data_size, context_impl->get_engine());
+    return std::make_shared<CompiledModel>(ib, shared_from_this(), context_impl, config, loaded_from_cache);
 }
 
 std::shared_ptr<ov::ICompiledModel> Plugin::import_model(std::istream& model,
