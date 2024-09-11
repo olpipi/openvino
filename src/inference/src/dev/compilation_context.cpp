@@ -181,6 +181,21 @@ std::istream& operator>>(std::istream& stream, CompiledBlobHeader& header) {
     return stream;
 }
 
+void operator>>(ov::ViewBuffer& stream, CompiledBlobHeader& header) {
+    std::string xmlStr;
+    stream.getline(xmlStr);
+
+    pugi::xml_document document;
+    pugi::xml_parse_result res = document.load_string(xmlStr.c_str());
+    OPENVINO_ASSERT(res.status == pugi::status_ok, "Error reading compiled blob header");
+
+    pugi::xml_node compiledBlobNode = document.document_element();
+    header.m_ieVersion = ov::util::pugixml::get_str_attr(compiledBlobNode, "ie_version");
+    header.m_fileInfo = ov::util::pugixml::get_str_attr(compiledBlobNode, "file_info");
+    header.m_runtimeInfo = ov::util::pugixml::get_str_attr(compiledBlobNode, "runtime_info");
+}
+
+
 std::ostream& operator<<(std::ostream& stream, const CompiledBlobHeader& header) {
     pugi::xml_document document;
     auto compiledBlobNode = document.append_child("compiled_blob");

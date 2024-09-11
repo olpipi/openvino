@@ -288,13 +288,13 @@ std::shared_ptr<ov::ICompiledModel> Plugin::import_model(std::istream& model, co
     return import_model(model, { context, nullptr }, config);
 }
 
-std::shared_ptr<ov::ICompiledModel> Plugin::import_model(char* data_ptr, size_t data_size, const ov::AnyMap& config) const {
+std::shared_ptr<ov::ICompiledModel> Plugin::import_model(ov::ViewBuffer& model, const ov::AnyMap& config) const {
     std::string device_id = get_device_id(config);
     auto context = get_default_context(device_id);
-    return import_model(data_ptr, data_size, { context, nullptr }, config);
+    return import_model(model, { context, nullptr }, config);
 }
 
-std::shared_ptr<ov::ICompiledModel> Plugin::import_model(char* data_ptr, size_t data_size,
+std::shared_ptr<ov::ICompiledModel> Plugin::import_model(ov::ViewBuffer& model,
                                                          const ov::SoPtr<ov::IRemoteContext>& context,
                                                          const ov::AnyMap& orig_config) const {
     OV_ITT_SCOPED_TASK(itt::domains::intel_gpu_plugin, "Plugin::ImportNetwork");
@@ -318,7 +318,7 @@ std::shared_ptr<ov::ICompiledModel> Plugin::import_model(char* data_ptr, size_t 
     if (config.get_property(ov::cache_mode) == ov::CacheMode::OPTIMIZE_SIZE)
         return nullptr;
 
-    cldnn::BinaryInputBuffer ib(data_ptr, data_size, context_impl->get_engine());
+    cldnn::BinaryInputBuffer ib(model, context_impl->get_engine());
     return std::make_shared<CompiledModel>(ib, shared_from_this(), context_impl, config, loaded_from_cache);
 }
 

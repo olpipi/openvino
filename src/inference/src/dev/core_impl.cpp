@@ -1407,14 +1407,14 @@ ov::SoPtr<ov::ICompiledModel> ov::CoreImpl::load_model_from_cache(
 
     OPENVINO_ASSERT(cacheContent.cacheManager != nullptr);
     try {
-        cacheContent.cacheManager->read_cache_entry(cacheContent.blobId, [&](char* data, size_t size) {
+        cacheContent.cacheManager->read_cache_entry(cacheContent.blobId, [&](ov::ViewBuffer& model_buffer) {
             OV_ITT_SCOPE(FIRST_INFERENCE,
                          ov::itt::domains::LoadTime,
                          "Core::load_model_from_cache::ReadStreamAndImport");
             try {
                 ov::CompiledBlobHeader header;
 
-                networkStream >> header;
+                model_buffer >> header;
                 if (header.get_file_info() != ov::ModelCache::calculate_file_info(cacheContent.modelPath)) {
                     // Original file is changed, don't use cache
                     OPENVINO_THROW("Original model file is changed");
@@ -1442,8 +1442,8 @@ ov::SoPtr<ov::ICompiledModel> ov::CoreImpl::load_model_from_cache(
 
             ov::AnyMap update_config = config;
             update_config[ov::loaded_from_cache.name()] = true;
-            compiled_model = context ? plugin.import_model(data, size, context, update_config)
-                                     : plugin.import_model(data, size, update_config);
+            compiled_model = context ? plugin.import_model(model_buffer, context, update_config)
+                                     : plugin.import_model(model_buffer, update_config);
         });
     } catch (const HeaderException&) {
         // For these exceptions just remove old cache and set that import didn't work

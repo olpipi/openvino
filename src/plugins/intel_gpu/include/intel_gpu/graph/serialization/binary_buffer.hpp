@@ -11,7 +11,8 @@
 #include "buffer.hpp"
 #include "helpers.hpp"
 #include "bind.hpp"
-
+#include "openvino/runtime/view_buffer.hpp"
+#include <cstring>
 namespace cldnn {
 struct memory;
 
@@ -37,21 +38,28 @@ private:
     void* _strm;
 };
 
+namespace {
+std::istringstream global_stream;
+ov::ViewBuffer global_view_buffer(0, 0);
+}
+
 class BinaryInputBuffer : public InputBuffer<BinaryInputBuffer> {
 public:
     BinaryInputBuffer(std::istream& stream, engine& engine)
-    : InputBuffer<BinaryInputBuffer>(this, engine), _stream(stream), _impl_params(nullptr) {}
+    : InputBuffer<BinaryInputBuffer>(this, engine), _stream(stream), _impl_params(nullptr), _stream_buff(global_view_buffer), _buffer(false) {}
 
-    BinaryInputBuffer(char* data, size_t size, engine& engine)
+    BinaryInputBuffer(ov::ViewBuffer& model, engine& engine)
         : InputBuffer<BinaryInputBuffer>(this, engine),
+          _stream(global_stream),
           _impl_params(nullptr),
-          _stream(std::istringstream()){}
+          _stream_buff(model),
+          _buffer(true) {}
 
     void read(void* const data, std::streamsize size) {
-        if (_data_ptr) {
-            OPENVINO_ASSERT(_data_size >= size + _data_offset);
-            std::memcpy(data, _data_ptr + _data_offset, size);
-            _data_offset += size;        
+        if (_buffer) {
+            auto data_ptr = _stream_buff.get_next(size);
+            OPENVINO_ASSERT(data_ptr);
+            std::memcpy(data, data_ptr, size);
         } else {
             auto const read_size = _stream.rdbuf()->sgetn(reinterpret_cast<char*>(data), size);
             OPENVINO_ASSERT(read_size == size,
@@ -69,34 +77,8 @@ public:
 private:
     std::istream& _stream;
     void* _impl_params;
-    char* _data_ptr = nullptr;
-    size_t _data_offset = 0;
-    size_t _data_size = 0;
-
-};
-
-class BinaryInputRawBuffer : public InputBuffer<BinaryInputRawBuffer> {
-public:
-    BinaryInputRawBuffer(char* data, size_t size, engine& engine)
-    : InputBuffer<BinaryInputRawBuffer>(this, engine), _data_ptr(data), _data_size(size), _impl_params(nullptr) {}
-
-    void read(void* const data, std::streamsize size) {
-        OPENVINO_ASSERT(_data_size >= size + _data_offset);
-        auto data_ptr = reinterpret_cast<char*>(data);
-        data_ptr = _data_ptr + _data_offset;
-        _data_offset += size;
-    }
-
-    void setKernelImplParams(void* impl_params) { _impl_params = impl_params; }
-    void* getKernelImplParams() const { return _impl_params; }
-
-private:
-
-    void* _impl_params;
-
-    char* _data_ptr = nullptr;
-    size_t _data_offset = 0;
-    size_t _data_size = 0;
+    ov::ViewBuffer& _stream_buff;
+    bool _buffer;
 };
 
 template <typename T>
@@ -116,26 +98,10 @@ public:
 };
 
 template <typename T>
-class Serializer<BinaryInputRawBuffer, T, typename std::enable_if<std::is_arithmetic<T>::value>::type> {
-public:
-    static void load(BinaryInputRawBuffer& buffer, T& object) {
-        buffer.read(std::addressof(object), sizeof(object));
-    }
-};
-
-template <typename T>
 class Serializer<BinaryOutputBuffer, Data<T>> {
 public:
     static void save(BinaryOutputBuffer& buffer, const Data<T>& bin_data) {
         buffer.write(bin_data.data, static_cast<std::streamsize>(bin_data.number_of_bytes));
-    }
-};
-
-template <typename T>
-class Serializer<BinaryInputRawBuffer, Data<T>> {
-public:
-    static void load(BinaryInputRawBuffer& buffer, Data<T>& bin_data) {
-        buffer.read(bin_data.data, static_cast<std::streamsize>(bin_data.number_of_bytes));
     }
 };
 

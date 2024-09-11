@@ -42,13 +42,11 @@ public:
                                                      const ov::SoPtr<ov::IRemoteContext>& context,
                                                      const ov::AnyMap& properties) const override;
     
-    std::shared_ptr<ov::ICompiledModel> import_model(char* data_ptr,
-                                                             size_t data_size,
+    std::shared_ptr<ov::ICompiledModel> import_model(ov::ViewBuffer&,
                                                      const ov::AnyMap& properties) const override {
         return nullptr;
     };
-    std::shared_ptr<ov::ICompiledModel> import_model(char* data_ptr,
-                                                             size_t data_size,
+    std::shared_ptr<ov::ICompiledModel> import_model(ov::ViewBuffer&,
                                                              const ov::SoPtr<ov::IRemoteContext>& context,
                                                              const ov::AnyMap& properties) const override{return nullptr;};
 

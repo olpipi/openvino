@@ -50,6 +50,7 @@ public:
     }
 
     friend std::istream& operator>>(std::istream& stream, CompiledBlobHeader& header);
+    friend void operator>>(ov::ViewBuffer& stream, CompiledBlobHeader& header);
 
     friend std::ostream& operator<<(std::ostream& stream, const CompiledBlobHeader& header);
 };

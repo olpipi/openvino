@@ -13,9 +13,11 @@
 #include <functional>
 #include <memory>
 #include <string>
+#ifdef _WIN32
 #include <windows.h>
-
+#endif
 #include "openvino/util/file_util.hpp"
+#include "openvino/runtime/view_buffer.hpp"
 
 namespace ov {
 
@@ -68,7 +70,7 @@ public:
     /**
      * @brief Function passing created input stream
      */
-    using StreamReader = std::function<void(char*, size_t)>;
+    using StreamReader = std::function<void(ov::ViewBuffer&)>;
 
     /**
      * @brief Callback when OpenVINO intends to read model from cache
@@ -238,7 +240,8 @@ private:
             //end = std::chrono::steady_clock::now();
             //std::cout << "time to read file:"
             //          << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() << "\n";
-            reader(stream);
+            ov::ViewBuffer buff(nullptr, 0);
+            reader(buff);
             //end = std::chrono::steady_clock::now();
             //std::cout << "time to read + deserialize file:"
             //          << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() << "\n";

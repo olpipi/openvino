@@ -73,10 +73,9 @@ ov::SoPtr<ov::ICompiledModel> ov::Plugin::import_model(std::istream& model, cons
     OV_PLUGIN_CALL_STATEMENT(return {m_ptr->import_model(model, properties), m_so});
 }
 
-ov::SoPtr<ov::ICompiledModel> ov::Plugin::import_model(char* data_ptr,
-                                                       size_t data_size,
+ov::SoPtr<ov::ICompiledModel> ov::Plugin::import_model(ov::ViewBuffer& model,
                                                        const ov::AnyMap& properties) const {
-    OV_PLUGIN_CALL_STATEMENT(return {m_ptr->import_model(data_ptr, data_size, properties), m_so});
+    OV_PLUGIN_CALL_STATEMENT(return {m_ptr->import_model(model, properties), m_so});
 }
 
 ov::SoPtr<ov::ICompiledModel> ov::Plugin::import_model(std::istream& networkModel,
@@ -85,11 +84,10 @@ ov::SoPtr<ov::ICompiledModel> ov::Plugin::import_model(std::istream& networkMode
     OV_PLUGIN_CALL_STATEMENT(return {m_ptr->import_model(networkModel, context, config), m_so});
 }
 
-ov::SoPtr<ov::ICompiledModel> ov::Plugin::import_model(char* data_ptr,
-                                                        size_t data_size,
+ov::SoPtr<ov::ICompiledModel> ov::Plugin::import_model(ov::ViewBuffer& model,
                                                         const ov::SoPtr<ov::IRemoteContext>& context,
                                                         const ov::AnyMap& config) const {
-    OV_PLUGIN_CALL_STATEMENT(return {m_ptr->import_model(data_ptr, data_size, context, config), m_so});
+    OV_PLUGIN_CALL_STATEMENT(return {m_ptr->import_model(model, context, config), m_so});
     }
 
     ov::SoPtr<ov::IRemoteContext> ov::Plugin::create_context(const AnyMap& params) const {

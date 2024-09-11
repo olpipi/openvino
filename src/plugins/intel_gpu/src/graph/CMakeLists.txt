@@ -49,7 +49,8 @@ target_link_libraries(${TARGET_NAME} PRIVATE openvino_intel_gpu_kernels
                                              openvino::itt
                                              openvino::reference
                                              openvino::runtime::dev
-                                             openvino::runtime)
+                                             openvino::runtime
+                                             openvino::core::dev)
 
 if(ENABLE_ONEDNN_FOR_GPU)
     target_link_libraries(${TARGET_NAME} PUBLIC onednn_gpu_tgt)

@@ -21,6 +21,7 @@
 #include "openvino/runtime/iremote_context.hpp"
 #include "openvino/runtime/threading/executor_manager.hpp"
 #include "openvino/util/pp.hpp"
+#include "openvino/runtime/view_buffer.hpp"
 
 namespace ov {
 
@@ -171,8 +172,7 @@ public:
      */
     virtual std::shared_ptr<ov::ICompiledModel> import_model(std::istream& model,
                                                              const ov::AnyMap& properties) const = 0;
-    virtual std::shared_ptr<ov::ICompiledModel> import_model(char* data_ptr,
-                                                             size_t data_size,
+    virtual std::shared_ptr<ov::ICompiledModel> import_model(ov::ViewBuffer& model,
                                                              const ov::AnyMap& properties) const = 0;
     
     /**
@@ -188,8 +188,7 @@ public:
                                                              const ov::SoPtr<ov::IRemoteContext>& context,
                                                              const ov::AnyMap& properties) const = 0;
 
-    virtual std::shared_ptr<ov::ICompiledModel> import_model(char* data_ptr,
-                                                             size_t data_size,
+    virtual std::shared_ptr<ov::ICompiledModel> import_model(ov::ViewBuffer& model,
                                                              const ov::SoPtr<ov::IRemoteContext>& context,
                                                              const ov::AnyMap& properties) const = 0;
 

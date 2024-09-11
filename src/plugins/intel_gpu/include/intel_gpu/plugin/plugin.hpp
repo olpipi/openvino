@@ -53,15 +53,15 @@ public:
     std::shared_ptr<ov::ICompiledModel> compile_model(const std::shared_ptr<const ov::Model>& model,
                                                       const ov::AnyMap& properties,
                                                       const ov::SoPtr<ov::IRemoteContext>& context) const override;
-    
+
     void set_property(const ov::AnyMap& properties) override;
     ov::Any get_property(const std::string& name, const ov::AnyMap& arguments) const override;
     std::shared_ptr<ov::ICompiledModel> import_model(std::istream& model, const ov::AnyMap& properties) const override;
     std::shared_ptr<ov::ICompiledModel> import_model(std::istream& model,
                                                      const ov::SoPtr<ov::IRemoteContext>& context,
                                                      const ov::AnyMap& properties) const override;
-    std::shared_ptr<ov::ICompiledModel> import_model(char* data_ptr, size_t data_size, const ov::AnyMap& properties) const override;
-    std::shared_ptr<ov::ICompiledModel> import_model(char* data_ptr, size_t data_size,
+    std::shared_ptr<ov::ICompiledModel> import_model(ov::ViewBuffer& model, const ov::AnyMap& properties) const override;
+    std::shared_ptr<ov::ICompiledModel> import_model(ov::ViewBuffer& model,
                                                      const ov::SoPtr<ov::IRemoteContext>& context,
                                                      const ov::AnyMap& properties) const override;
     ov::SupportedOpsMap query_model(const std::shared_ptr<const ov::Model>& model,
