@@ -8,6 +8,7 @@
 #include "openvino/runtime/system_conf.hpp"
 #include "openvino/runtime/threading/cpu_streams_info.hpp"
 #include "openvino/util/weights_path.hpp"
+#include "openvino/runtime/shared_buffer.hpp"
 
 #include "intel_gpu/runtime/memory.hpp"
 #include "intel_gpu/runtime/engine.hpp"
@@ -1842,6 +1843,14 @@ void program::load(cldnn::BinaryInputBuffer& ib) {
     size_t num_nodes;
     ib >> num_nodes;
     bool is_valid_data_node;
+    std::chrono::steady_clock::time_point begin, end;
+    std::chrono::steady_clock::duration result = std::chrono::steady_clock::duration::zero();
+
+    auto& stream = ib.get_stream();
+    std::shared_ptr<ov::AlignedBuffer> buffer;
+    if (auto mmap_buffer = dynamic_cast<ov::OwningSharedStreamBuffer*>(stream.rdbuf()))
+        buffer = mmap_buffer->get_buffer();
+
     for (size_t i = 0; i < num_nodes; ++i) {
         ib >> is_valid_data_node;
         if (!is_valid_data_node)
@@ -1850,10 +1859,15 @@ void program::load(cldnn::BinaryInputBuffer& ib) {
         std::shared_ptr<cldnn::primitive> prim;
         ib >> prim;
         if (auto data_prim = dynamic_cast<cldnn::data*>(prim.get())) {
-            data_prim->load_weights(ib, mapped_memory);
+            begin = std::chrono::steady_clock::now();
+            data_prim->load_weights(ib, mapped_memory, stream, buffer);
+            end = std::chrono::steady_clock::now();
+            result += end - begin;
         }
         get_or_create(prim);
     }
+
+    std::cout << "import read: " << std::chrono::duration_cast<std::chrono::milliseconds>(result).count() << "\n";
 
     size_t num_output_sharing_mutable_datas;
     ib >> num_output_sharing_mutable_datas;

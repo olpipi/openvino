@@ -12,7 +12,7 @@
 #include "intel_gpu/plugin/graph.hpp"
 #include "intel_gpu/plugin/compiled_model.hpp"
 #include "intel_gpu/plugin/async_infer_request.hpp"
-
+#include <chrono>
 #include <sys/types.h>
 
 namespace ov {
@@ -146,6 +146,7 @@ CompiledModel::CompiledModel(cldnn::BinaryInputBuffer& ib,
             m_outputs.push_back(new_result->output(0));
         }
     }
+
 
     auto graph_base = std::make_shared<Graph>(ib, context, m_config, 0);
     for (uint16_t n = 0; n < m_config.get_property(ov::num_streams); n++) {

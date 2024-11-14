@@ -76,7 +76,8 @@ struct data : public primitive_base<data> {
         primitive_base<data>::load(ib);
     }
 
-    void load_weights(BinaryInputBuffer& ib, std::shared_ptr<ov::MappedMemory> mapped_weights) {
+    void load_weights(BinaryInputBuffer& ib, std::shared_ptr<ov::MappedMemory> mapped_weights,
+                      std::istream& stream, std::shared_ptr<ov::AlignedBuffer> buffer) {
         layout output_layout = layout();
         ib >> output_layout;
 
@@ -105,6 +106,8 @@ struct data : public primitive_base<data> {
                 mapped_weights);
         }
 
+        size_t offset = stream.tellg();
+
         if (_allocation_type == allocation_type::usm_host || _allocation_type == allocation_type::usm_shared) {
             if (is_cache_without_weights) {
                 std::memcpy(reinterpret_cast<uint8_t*>(mem->buffer_ptr()), shared_buf->get_ptr<uint8_t>(), data_size);
@@ -112,16 +115,23 @@ struct data : public primitive_base<data> {
                 ib >> make_data(mem->buffer_ptr(), data_size);
             }
         } else {
+            if (buffer)
+                stream.seekg(data_size, std::ios_base::cur);
+
             const size_t DATA_BLOCK_SIZE = 2 * 1024 * 1024;
             auto& strm = ib.get_engine().get_service_stream();
             if (data_size < DATA_BLOCK_SIZE || output_layout.format.is_image_2d()) {
                 std::vector<uint8_t> _buf(data_size);
-                if (is_cache_without_weights) {
-                    std::memcpy(reinterpret_cast<uint8_t*>(_buf.data()), shared_buf->get_ptr<uint8_t>(), data_size);
+                if (buffer) {
+                    mem->copy_from(strm, buffer->get_ptr(offset));
                 } else {
-                    ib >> make_data(_buf.data(), data_size);
+                    if (is_cache_without_weights) {
+                        std::memcpy(reinterpret_cast<uint8_t*>(_buf.data()), shared_buf->get_ptr<uint8_t>(), data_size);
+                    } else {
+                        ib >> make_data(_buf.data(), data_size);
+                    }
+                    mem->copy_from(strm, _buf.data());
                 }
-                mem->copy_from(strm, _buf.data());
             } else {
                 std::vector<uint8_t> _buf1(DATA_BLOCK_SIZE);
                 std::vector<uint8_t> _buf2(DATA_BLOCK_SIZE);
@@ -129,40 +139,51 @@ struct data : public primitive_base<data> {
                 event::ptr ev1, ev2;
                 ev1 = ev2 = nullptr;
                 size_t dst_offset = 0;
+                void* data_ptr;
                 while (dst_offset < data_size) {
                     const bool is_blocking = false;
                     const size_t src_offset = 0;
                     size_t copy_size =
                         (data_size > (dst_offset + DATA_BLOCK_SIZE)) ? DATA_BLOCK_SIZE : (data_size - dst_offset);
                     if (buf_flag) {
-                        if (is_cache_without_weights) {
-                            std::memcpy(reinterpret_cast<uint8_t*>(_buf1.data()),
-                                        shared_buf->get_ptr<uint8_t>() + dst_offset,
-                                        copy_size);
+                        if (buffer) {
+                            data_ptr = buffer->get_ptr(offset + dst_offset);
                         } else {
-                            ib >> make_data(_buf1.data(), copy_size);
+                            if (is_cache_without_weights) {
+                                std::memcpy(reinterpret_cast<uint8_t*>(_buf1.data()),
+                                            shared_buf->get_ptr<uint8_t>() + dst_offset,
+                                            copy_size);
+                            } else {
+                                ib >> make_data(_buf1.data(), copy_size);
+                            }
+                            data_ptr = _buf1.data();
                         }
                         if (ev2 != nullptr) {
                             ev2->wait();
                             ev2 = nullptr;
                         }
-                        ev1 = mem->copy_from(strm, _buf1.data(), src_offset, dst_offset, copy_size, is_blocking);
+                        ev1 = mem->copy_from(strm, data_ptr, src_offset, dst_offset, copy_size, is_blocking);
                     } else {
-                        if (is_cache_without_weights) {
-                            std::memcpy(reinterpret_cast<uint8_t*>(_buf2.data()),
-                                        shared_buf->get_ptr<uint8_t>() + dst_offset,
-                                        copy_size);
+                        if (buffer) {
+                            data_ptr = buffer->get_ptr(offset + dst_offset);
                         } else {
-                            ib >> make_data(_buf2.data(), copy_size);
+                            if (is_cache_without_weights) {
+                                std::memcpy(reinterpret_cast<uint8_t*>(_buf2.data()),
+                                            shared_buf->get_ptr<uint8_t>() + dst_offset,
+                                            copy_size);
+                            } else {
+                                ib >> make_data(_buf2.data(), copy_size);
+                            }
+                            data_ptr = _buf2.data();
                         }
                         if (ev1 != nullptr) {
                             ev1->wait();
                             ev1 = nullptr;
                         }
-                        ev2 = mem->copy_from(strm, _buf2.data(), src_offset, dst_offset, copy_size, is_blocking);
+                        ev2 = mem->copy_from(strm, data_ptr, src_offset, dst_offset, copy_size, is_blocking);
                     }
-                    dst_offset += DATA_BLOCK_SIZE;
                     buf_flag = !buf_flag;
+                    dst_offset += DATA_BLOCK_SIZE;
                 }
                 if (ev2 != nullptr) {
                     ev2->wait();

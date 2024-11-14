@@ -97,7 +97,9 @@ Graph::Graph(cldnn::BinaryInputBuffer &ib, const RemoteContextImpl::Ptr& context
     }
 
     auto imported_prog = std::make_shared<cldnn::program>(get_engine(), m_config);
+
     imported_prog->load(ib);
+
     build(imported_prog);
 }
 

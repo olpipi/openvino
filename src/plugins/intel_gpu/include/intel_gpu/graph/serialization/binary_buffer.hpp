@@ -42,11 +42,7 @@ public:
     BinaryInputBuffer(std::istream& stream, engine& engine)
     : InputBuffer<BinaryInputBuffer>(this, engine), _stream(stream), _impl_params(nullptr) {}
 
-    void read(void* const data, std::streamsize size) {
-        auto const read_size = _stream.rdbuf()->sgetn(reinterpret_cast<char*>(data), size);
-        OPENVINO_ASSERT(read_size == size,
-            "[GPU] Failed to read " + std::to_string(size) + " bytes from stream! Read " + std::to_string(read_size));
-    }
+    void read(void* const data, std::streamsize size);
 
     void setKernelImplParams(void* impl_params) { _impl_params = impl_params; }
     void* getKernelImplParams() const { return _impl_params; }
@@ -54,6 +50,7 @@ public:
     std::streampos tellg() { return _stream.tellg(); }
     void seekg(std::streampos pos) { _stream.seekg(pos); }
 
+    std::istream& get_stream() {return _stream;}
 private:
     std::istream& _stream;
     void* _impl_params;
