@@ -29,6 +29,7 @@ public:
                   RemoteContextImpl::Ptr context,
                   const ExecutionConfig& config);
     CompiledModel(cldnn::BinaryInputBuffer& ib,
+                  std::shared_ptr<ov::AlignedBuffer> mmap_buffer,
                   const std::shared_ptr<const ov::IPlugin>& plugin,
                   RemoteContextImpl::Ptr context,
                   const ExecutionConfig& config,
@@ -73,6 +74,5 @@ private:
     std::vector<std::shared_ptr<Graph>> m_graphs;
     bool m_loaded_from_cache;
 };
-
 }  // namespace intel_gpu
 }  // namespace ov

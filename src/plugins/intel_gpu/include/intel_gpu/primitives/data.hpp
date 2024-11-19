@@ -76,8 +76,7 @@ struct data : public primitive_base<data> {
         primitive_base<data>::load(ib);
     }
 
-    void load_weights(BinaryInputBuffer& ib, std::shared_ptr<ov::MappedMemory> mapped_weights,
-                      std::istream& stream, std::shared_ptr<ov::AlignedBuffer> buffer) {
+    void load_weights(BinaryInputBuffer& ib, std::shared_ptr<ov::MappedMemory> mapped_weights) {
         layout output_layout = layout();
         ib >> output_layout;
 
@@ -106,8 +105,6 @@ struct data : public primitive_base<data> {
                 mapped_weights);
         }
 
-        size_t offset = stream.tellg();
-
         if (_allocation_type == allocation_type::usm_host || _allocation_type == allocation_type::usm_shared) {
             if (is_cache_without_weights) {
                 std::memcpy(reinterpret_cast<uint8_t*>(mem->buffer_ptr()), shared_buf->get_ptr<uint8_t>(), data_size);
@@ -115,23 +112,16 @@ struct data : public primitive_base<data> {
                 ib >> make_data(mem->buffer_ptr(), data_size);
             }
         } else {
-            if (buffer)
-                stream.seekg(data_size, std::ios_base::cur);
-
             const size_t DATA_BLOCK_SIZE = 2 * 1024 * 1024;
             auto& strm = ib.get_engine().get_service_stream();
             if (data_size < DATA_BLOCK_SIZE || output_layout.format.is_image_2d()) {
                 std::vector<uint8_t> _buf(data_size);
-                if (buffer) {
-                    mem->copy_from(strm, buffer->get_ptr(offset));
+                if (is_cache_without_weights) {
+                    std::memcpy(reinterpret_cast<uint8_t*>(_buf.data()), shared_buf->get_ptr<uint8_t>(), data_size);
                 } else {
-                    if (is_cache_without_weights) {
-                        std::memcpy(reinterpret_cast<uint8_t*>(_buf.data()), shared_buf->get_ptr<uint8_t>(), data_size);
-                    } else {
-                        ib >> make_data(_buf.data(), data_size);
-                    }
-                    mem->copy_from(strm, _buf.data());
+                    ib >> make_data(_buf.data(), data_size);
                 }
+                mem->copy_from(strm, _buf.data());
             } else {
                 std::vector<uint8_t> _buf1(DATA_BLOCK_SIZE);
                 std::vector<uint8_t> _buf2(DATA_BLOCK_SIZE);
@@ -139,48 +129,37 @@ struct data : public primitive_base<data> {
                 event::ptr ev1, ev2;
                 ev1 = ev2 = nullptr;
                 size_t dst_offset = 0;
-                void* data_ptr;
                 while (dst_offset < data_size) {
                     const bool is_blocking = false;
                     const size_t src_offset = 0;
                     size_t copy_size =
                         (data_size > (dst_offset + DATA_BLOCK_SIZE)) ? DATA_BLOCK_SIZE : (data_size - dst_offset);
                     if (buf_flag) {
-                        if (buffer) {
-                            data_ptr = buffer->get_ptr(offset + dst_offset);
+                        if (is_cache_without_weights) {
+                            std::memcpy(reinterpret_cast<uint8_t*>(_buf1.data()),
+                                        shared_buf->get_ptr<uint8_t>() + dst_offset,
+                                        copy_size);
                         } else {
-                            if (is_cache_without_weights) {
-                                std::memcpy(reinterpret_cast<uint8_t*>(_buf1.data()),
-                                            shared_buf->get_ptr<uint8_t>() + dst_offset,
-                                            copy_size);
-                            } else {
-                                ib >> make_data(_buf1.data(), copy_size);
-                            }
-                            data_ptr = _buf1.data();
+                            ib >> make_data(_buf1.data(), copy_size);
                         }
                         if (ev2 != nullptr) {
                             ev2->wait();
                             ev2 = nullptr;
                         }
-                        ev1 = mem->copy_from(strm, data_ptr, src_offset, dst_offset, copy_size, is_blocking);
+                        ev1 = mem->copy_from(strm, _buf1.data(), src_offset, dst_offset, copy_size, is_blocking);
                     } else {
-                        if (buffer) {
-                            data_ptr = buffer->get_ptr(offset + dst_offset);
+                        if (is_cache_without_weights) {
+                            std::memcpy(reinterpret_cast<uint8_t*>(_buf2.data()),
+                                        shared_buf->get_ptr<uint8_t>() + dst_offset,
+                                        copy_size);
                         } else {
-                            if (is_cache_without_weights) {
-                                std::memcpy(reinterpret_cast<uint8_t*>(_buf2.data()),
-                                            shared_buf->get_ptr<uint8_t>() + dst_offset,
-                                            copy_size);
-                            } else {
-                                ib >> make_data(_buf2.data(), copy_size);
-                            }
-                            data_ptr = _buf2.data();
+                            ib >> make_data(_buf2.data(), copy_size);
                         }
                         if (ev1 != nullptr) {
                             ev1->wait();
                             ev1 = nullptr;
                         }
-                        ev2 = mem->copy_from(strm, data_ptr, src_offset, dst_offset, copy_size, is_blocking);
+                        ev2 = mem->copy_from(strm, _buf2.data(), src_offset, dst_offset, copy_size, is_blocking);
                     }
                     buf_flag = !buf_flag;
                     dst_offset += DATA_BLOCK_SIZE;
@@ -193,6 +172,52 @@ struct data : public primitive_base<data> {
                 }
             }
         }
+    }
+
+    std::vector<event::ptr> load_weights(BinaryInputBuffer& ib, std::istream& stream, std::shared_ptr<ov::AlignedBuffer> buffer) {
+        OPENVINO_ASSERT(buffer);
+        layout output_layout = layout();
+        ib >> output_layout;
+
+        allocation_type _allocation_type = allocation_type::unknown;
+        ib >> make_data(&_allocation_type, sizeof(_allocation_type));
+
+        size_t data_size = 0;
+        ib >> make_data(&data_size, sizeof(size_t));
+
+        mem = ib.get_engine().allocate_memory(output_layout, _allocation_type, false);
+
+        bool is_cache_without_weights;
+        ib >> is_cache_without_weights;
+        if (is_cache_without_weights) {
+            OPENVINO_THROW("mmap object is null");
+        }
+
+        size_t offset = stream.tellg();
+        std::vector<event::ptr> events;
+
+        if (_allocation_type == allocation_type::usm_host || _allocation_type == allocation_type::usm_shared) {
+                ib >> make_data(mem->buffer_ptr(), data_size);
+        } else {
+            stream.seekg(data_size, std::ios_base::cur);
+
+            const size_t DATA_BLOCK_SIZE = 2 * 1024 * 1024;
+            auto& strm = ib.get_engine().get_service_stream();
+            if (data_size < DATA_BLOCK_SIZE || output_layout.format.is_image_2d()) {
+                mem->copy_from(strm, buffer->get_ptr(offset));
+            } else {
+                size_t dst_offset = 0;
+                const size_t src_offset = 0;
+                size_t copy_size = 0;
+                while (dst_offset < data_size) {
+                    copy_size = (data_size > (dst_offset + DATA_BLOCK_SIZE)) ? DATA_BLOCK_SIZE : (data_size - dst_offset);
+                    auto ev = mem->copy_from(strm, buffer->get_ptr(offset + dst_offset), src_offset, dst_offset, copy_size, false);
+                    events.push_back(ev);
+                    dst_offset += DATA_BLOCK_SIZE;
+                }
+            }
+        }
+        return events;
     }
 };
 }  // namespace cldnn

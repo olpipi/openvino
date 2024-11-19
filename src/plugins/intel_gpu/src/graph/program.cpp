@@ -1831,6 +1831,10 @@ void program::save(cldnn::BinaryOutputBuffer& ob) const {
 }
 
 void program::load(cldnn::BinaryInputBuffer& ib) {
+    load(ib, nullptr);
+}
+
+void program::load(cldnn::BinaryInputBuffer& ib, std::shared_ptr<ov::AlignedBuffer> mmap_buffer) {
     init_program();
 
     std::shared_ptr<ov::MappedMemory> mapped_memory = nullptr;
@@ -1844,30 +1848,46 @@ void program::load(cldnn::BinaryInputBuffer& ib) {
     ib >> num_nodes;
     bool is_valid_data_node;
     std::chrono::steady_clock::time_point begin, end;
-    std::chrono::steady_clock::duration result = std::chrono::steady_clock::duration::zero();
+    begin = std::chrono::steady_clock::now();
 
-    auto& stream = ib.get_stream();
-    std::shared_ptr<ov::AlignedBuffer> buffer;
-    if (auto mmap_buffer = dynamic_cast<ov::OwningSharedStreamBuffer*>(stream.rdbuf()))
-        buffer = mmap_buffer->get_buffer();
 
-    for (size_t i = 0; i < num_nodes; ++i) {
-        ib >> is_valid_data_node;
-        if (!is_valid_data_node)
-            continue;
+    if (mmap_buffer && !mapped_memory) {
+        auto& stream = ib.get_stream();
+        std::vector<event::ptr> copy_events;
+        for (size_t i = 0; i < num_nodes; ++i) {
+            ib >> is_valid_data_node;
+            if (!is_valid_data_node)
+                continue;
 
-        std::shared_ptr<cldnn::primitive> prim;
-        ib >> prim;
-        if (auto data_prim = dynamic_cast<cldnn::data*>(prim.get())) {
-            begin = std::chrono::steady_clock::now();
-            data_prim->load_weights(ib, mapped_memory, stream, buffer);
-            end = std::chrono::steady_clock::now();
-            result += end - begin;
+            std::shared_ptr<cldnn::primitive> prim;
+            ib >> prim;
+            if (auto data_prim = dynamic_cast<cldnn::data*>(prim.get())) {
+                auto new_events = data_prim->load_weights(ib, stream, mmap_buffer);
+                copy_events.insert(copy_events.end(), std::make_move_iterator(new_events.begin()), std::make_move_iterator(new_events.end()));
+            }
+            get_or_create(prim);
         }
-        get_or_create(prim);
+        for (auto& event : copy_events) {
+            if (event)
+                event->wait();
+        }
+    } else {
+        for (size_t i = 0; i < num_nodes; ++i) {
+            ib >> is_valid_data_node;
+            if (!is_valid_data_node)
+                continue;
+
+            std::shared_ptr<cldnn::primitive> prim;
+            ib >> prim;
+            if (auto data_prim = dynamic_cast<cldnn::data*>(prim.get())) {
+                data_prim->load_weights(ib, mapped_memory);
+            }
+            get_or_create(prim);
+        }
     }
 
-    std::cout << "import read: " << std::chrono::duration_cast<std::chrono::milliseconds>(result).count() << "\n";
+    end = std::chrono::steady_clock::now();
+    std::cout << "import read: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() << "\n";
 
     size_t num_output_sharing_mutable_datas;
     ib >> num_output_sharing_mutable_datas;
