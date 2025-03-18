@@ -4,5 +4,5 @@
 
 ov_add_sample(NAME hello_classification
               SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp"
-              DEPENDENCIES format_reader ie_samples_utils)
+              DEPENDENCIES format_reader ie_samples_utils openvino_transformations)
 

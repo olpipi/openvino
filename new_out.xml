@@ -1,0 +1,58 @@
+<?xml version="1.0"?>
+<net name="main_graph" version="11">
+	<layers>
+		<layer id="0" name="onnx::Resize_4835" type="Const" version="opset1">
+			<data element_type="f32" shape="1, 64, 27" offset="0" size="6912" />
+			<output>
+				<port id="0" precision="FP32" names="onnx::Resize_4835">
+					<dim>1</dim>
+					<dim>64</dim>
+					<dim>27</dim>
+				</port>
+			</output>
+		</layer>
+		<layer id="1" name="onnx::Resize_4849" type="Const" version="opset1">
+			<data element_type="i64" shape="3" offset="6912" size="24" />
+			<output>
+				<port id="0" precision="I64" names="onnx::Resize_4839,onnx::Resize_4849,onnx::Resize_4897,onnx::Resize_4907,onnx::Resize_4985,onnx::Resize_4995,onnx::Resize_5041,onnx::Resize_5051,onnx::Resize_5129,onnx::Resize_5139,onnx::Resize_5185,onnx::Resize_5195,onnx::Resize_5273,onnx::Resize_5283,onnx::Resize_5329,onnx::Resize_5339">
+					<dim>3</dim>
+				</port>
+			</output>
+		</layer>
+		<layer id="2" name="/vision_encoder/layers.0/attn/Resize" type="Interpolate" version="opset11">
+			<data mode="linear_onnx" shape_calculation_mode="sizes" coordinate_transformation_mode="half_pixel" nearest_mode="floor" antialias="false" pads_begin="0, 0, 0" pads_end="0, 0, 0" cube_coeff="-0.75" />
+			<input>
+				<port id="0" precision="FP32">
+					<dim>1</dim>
+					<dim>64</dim>
+					<dim>27</dim>
+				</port>
+				<port id="1" precision="I64">
+					<dim>3</dim>
+				</port>
+			</input>
+			<output>
+				<port id="2" precision="FP32" names="/vision_encoder/layers.0/attn/Resize_output_0,image_embeddings">
+					<dim>1</dim>
+					<dim>64</dim>
+					<dim>27</dim>
+				</port>
+			</output>
+		</layer>
+		<layer id="3" name="Result" type="Result" version="opset1" output_names="image_embeddings">
+			<input>
+				<port id="0" precision="FP32">
+					<dim>1</dim>
+					<dim>64</dim>
+					<dim>27</dim>
+				</port>
+			</input>
+		</layer>
+	</layers>
+	<edges>
+		<edge from-layer="0" from-port="0" to-layer="2" to-port="0" />
+		<edge from-layer="1" from-port="0" to-layer="2" to-port="1" />
+		<edge from-layer="2" from-port="2" to-layer="3" to-port="0" />
+	</edges>
+	<rt_info />
+</net>
