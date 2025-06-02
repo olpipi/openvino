@@ -25,13 +25,13 @@
 
 ov::intel_cpu::pass::MulAddToFMA::MulAddToFMA() {
     MATCHER_SCOPE(MulAddToFMA);
-    auto is_not_memory_access = [](const Output<Node>& out) {
+    auto is_not_memory_access = [](const Output<ov::Node>& out) {
         return !std::dynamic_pointer_cast<const snippets::modifier::MemoryAccess>(out.get_node_shared_ptr());
     };
     auto mul_input_1 = ov::pass::pattern::any_input();
     auto mul_input_2 = ov::pass::pattern::any_input();
     auto mul_m =
-        ov::pass::pattern::wrap_type<ov::op::v1::Multiply>({mul_input_1, mul_input_2}, [=](const Output<Node>& out) {
+        ov::pass::pattern::wrap_type<ov::op::v1::Multiply>({mul_input_1, mul_input_2}, [=](const Output<ov::Node>& out) {
             return out.get_target_inputs().size() == 1 && is_not_memory_access(out);
         });
     auto add_input_2 = ov::pass::pattern::any_input();

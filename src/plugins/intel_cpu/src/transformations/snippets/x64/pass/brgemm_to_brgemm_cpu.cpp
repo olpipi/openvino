@@ -43,7 +43,7 @@ void set_full_port_desc(const T& port) {
 
 pass::BrgemmToBrgemmCPU::BrgemmToBrgemmCPU() {
     MATCHER_SCOPE(BrgemmToBrgemmCPU);
-    auto is_not_tpp = [](const Output<Node>& out) {
+    auto is_not_tpp = [](const Output<ov::Node>& out) {
         return !std::dynamic_pointer_cast<const intel_cpu::tpp::modifier::TensorProcessingPrimitive>(
             out.get_node_shared_ptr());
     };

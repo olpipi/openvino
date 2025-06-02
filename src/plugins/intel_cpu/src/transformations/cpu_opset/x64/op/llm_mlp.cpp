@@ -71,7 +71,7 @@ void LLMMLPNode::validate_and_infer_types() {
     set_output_type(0, itype, oshape);
 }
 
-std::shared_ptr<Node> LLMMLPNode::clone_with_new_inputs(const ov::OutputVector& new_args) const {
+std::shared_ptr<ov::Node> LLMMLPNode::clone_with_new_inputs(const ov::OutputVector& new_args) const {
     INTERNAL_OP_SCOPE(LLMMLPNode_with_new_inputs);
     check_new_args_count(this, new_args);
     return std::make_shared<LLMMLPNode>(new_args, m_config);

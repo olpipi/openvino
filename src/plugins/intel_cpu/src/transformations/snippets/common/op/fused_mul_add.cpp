@@ -26,7 +26,7 @@ bool FusedMulAdd::visit_attributes([[maybe_unused]] AttributeVisitor& visitor) {
     return true;
 }
 
-std::shared_ptr<Node> FusedMulAdd::clone_with_new_inputs(const OutputVector& new_args) const {
+std::shared_ptr<ov::Node> FusedMulAdd::clone_with_new_inputs(const OutputVector& new_args) const {
     INTERNAL_OP_SCOPE(FusedMulAdd);
     check_new_args_count(this, new_args);
     return std::make_shared<FusedMulAdd>(new_args.at(0), new_args.at(1), new_args.at(2));

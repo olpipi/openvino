@@ -95,8 +95,8 @@ bool EnforcePrecision::run_on_model(const std::shared_ptr<ov::Model>& f) {
             continue;
         }
 
-        const auto insert_convert = [](const Output<Node>& parent_output,
-                                       const std::shared_ptr<Node>& op,
+        const auto insert_convert = [](const Output<ov::Node>& parent_output,
+                                       const std::shared_ptr<ov::Node>& op,
                                        const size_t input_index,
                                        const element::Type& target) {
             auto convert = std::make_shared<snippets::op::ConvertSaturation>(parent_output, target);

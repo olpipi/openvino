@@ -37,7 +37,7 @@ void QKVProjectionNode::validate_and_infer_types() {
     set_output_type(2, itype, oshape2);
 }
 
-std::shared_ptr<Node> QKVProjectionNode::clone_with_new_inputs(const ov::OutputVector& new_args) const {
+std::shared_ptr<ov::Node> QKVProjectionNode::clone_with_new_inputs(const ov::OutputVector& new_args) const {
     INTERNAL_OP_SCOPE(QKVProjection_with_new_inputs);
     check_new_args_count(this, new_args);
     return std::make_shared<QKVProjectionNode>(new_args, m_config);

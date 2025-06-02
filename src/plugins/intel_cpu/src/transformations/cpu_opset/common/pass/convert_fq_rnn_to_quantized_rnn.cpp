@@ -238,7 +238,7 @@ ov::intel_cpu::ConvertFqRnnToQuantizedRnn::ConvertFqRnnToQuantizedRnn() {
             const auto& multiply = rnn->get_input_node_shared_ptr(1);
 
             auto new_convert = convert->clone_with_new_inputs({rnn_quantized->output(1)});
-            std::shared_ptr<Node> multiply_input = new_convert;
+            std::shared_ptr<ov::Node> multiply_input = new_convert;
             // dequantize with subtract
             if (subtract_it != pattern_map.end()) {
                 const auto subtract = ov::as_type_ptr<op::v1::Subtract>(subtract_it->second.get_node_shared_ptr());

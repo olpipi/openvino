@@ -382,8 +382,9 @@ void jit_dft_kernel_f32<isa>::generate() {
 // real = [1, 2, 3, 4, 5, 6, 7, 8]
 // imag = [11, 12, 13, 14, 15, 16, 17, 18]
 // interleaved = [1, 11, 2, 12, 3, 13, 4, 14, 5, 15, 6, 16, 7, 17, 8, 18]
+using dnnl::impl::cpu::x64::cpu_isa_t;
 template <>
-void jit_dft_kernel_f32<avx512_core>::interleave_and_store(const Vmm& real,
+void jit_dft_kernel_f32<cpu_isa_t::avx512_core>::interleave_and_store(const Vmm& real,
                                                            const Vmm& imag,
                                                            const Xbyak::RegExp& reg_exp,
                                                            const Vmm& tmp) {
@@ -397,7 +398,7 @@ void jit_dft_kernel_f32<avx512_core>::interleave_and_store(const Vmm& real,
 }
 
 template <>
-void jit_dft_kernel_f32<avx2>::interleave_and_store(const Vmm& real,
+void jit_dft_kernel_f32<cpu_isa_t::avx2>::interleave_and_store(const Vmm& real,
                                                     const Vmm& imag,
                                                     const Xbyak::RegExp& reg_exp,
                                                     const Vmm& tmp) {
@@ -412,7 +413,7 @@ void jit_dft_kernel_f32<avx2>::interleave_and_store(const Vmm& real,
 }
 
 template <>
-void jit_dft_kernel_f32<sse41>::interleave_and_store(const Vmm& real,
+void jit_dft_kernel_f32<cpu_isa_t::sse41>::interleave_and_store(const Vmm& real,
                                                      const Vmm& imag,
                                                      const Xbyak::RegExp& reg_exp,
                                                      const Vmm& tmp) {

@@ -152,7 +152,7 @@ void BrgemmCPU::validate_inputs() const {
         "BrgemmCPU expects 3 inputs with input precisions i8|i8 and bf16|bf16 on AMX system");
 }
 
-std::shared_ptr<Node> BrgemmCPU::clone_with_new_inputs(const OutputVector& new_args) const {
+std::shared_ptr<ov::Node> BrgemmCPU::clone_with_new_inputs(const OutputVector& new_args) const {
     INTERNAL_OP_SCOPE(BrgemmCPU_clone_with_new_inputs);
     check_new_args_count(this, new_args);
     std::shared_ptr<BrgemmCPU> brgemm;

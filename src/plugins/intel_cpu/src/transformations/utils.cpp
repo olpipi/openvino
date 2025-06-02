@@ -42,7 +42,7 @@ bool has_matmul_with_compressed_weights(const std::shared_ptr<const ov::Model>& 
             continue;
         }
 
-        std::unordered_set<Node*> visited;
+        std::unordered_set<ov::Node*> visited;
         ov::op::util::visit_constant_path(weights.get_node(), visited, is_decompression_multiply);
 
         if (has_decompression_multiply) {

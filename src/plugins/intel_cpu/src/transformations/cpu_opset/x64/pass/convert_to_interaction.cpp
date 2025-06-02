@@ -36,7 +36,7 @@ ov::intel_cpu::ConvertToInteraction::ConvertToInteraction() {
     MATCHER_SCOPE(ConvertToInteraction);
     using namespace ov::pass::pattern;
     auto dense_feature_m = any_input(has_static_shape());
-    std::vector<std::shared_ptr<Node>> features_m{dense_feature_m};
+    std::vector<std::shared_ptr<ov::Node>> features_m{dense_feature_m};
     OutputVector features_output{dense_feature_m->output(0)};
     const int sparse_feature_num = 26;
     for (size_t i = 0; i < sparse_feature_num; i++) {
@@ -63,13 +63,13 @@ ov::intel_cpu::ConvertToInteraction::ConvertToInteraction() {
         const auto& pattern_map = m.get_pattern_value_map();
         auto concat_node = pattern_map.at(concat_m).get_node_shared_ptr();
         auto dense_feature_node = concat_node->input_value(0).get_node_shared_ptr();
-        std::shared_ptr<Node> final_concat_node;
+        std::shared_ptr<ov::Node> final_concat_node;
         if (pattern_map.find(final_concat_m1) != pattern_map.end()) {
             final_concat_node = pattern_map.at(final_concat_m1).get_node_shared_ptr();
         } else if (pattern_map.find(final_concat_m2) != pattern_map.end()) {
             final_concat_node = pattern_map.at(final_concat_m2).get_node_shared_ptr();
         }
-        std::vector<std::shared_ptr<Node>> features_node;
+        std::vector<std::shared_ptr<ov::Node>> features_node;
         auto first_feature_shape = dense_feature_node->get_output_partial_shape(0);
         for (const auto& i : features_m) {
             auto old_feature_node = pattern_map.at(i).get_node_shared_ptr();
@@ -151,7 +151,7 @@ ov::intel_cpu::ConvertInteractionInt8::ConvertInteractionInt8() {
                                                            wrap_type<ov::op::v0::Constant>(),
                                                            wrap_type<ov::op::v0::Constant>(),
                                                            wrap_type<ov::op::v0::Constant>()});
-    std::vector<std::shared_ptr<Node>> features_m{dense_fq_m};
+    std::vector<std::shared_ptr<ov::Node>> features_m{dense_fq_m};
     features_output.push_back(dense_fq_m->output(0));
     for (size_t i = 0; i < sparse_features; i++) {
         auto feature = any_input(has_static_shape());
@@ -180,7 +180,7 @@ ov::intel_cpu::ConvertInteractionInt8::ConvertInteractionInt8() {
         auto dense_fq_node = pattern_map.at(dense_fq_m).get_node_shared_ptr();
         auto sparse_fq_node = pattern_map.at(sparse_fq).get_node_shared_ptr();
         auto final_concat_node = pattern_map.at(final_concat_m).get_node_shared_ptr();
-        std::vector<std::shared_ptr<Node>> features_node;
+        std::vector<std::shared_ptr<ov::Node>> features_node;
         auto first_feature_shape = dense_fq_node->get_output_partial_shape(0);
         for (const auto& i : features_m) {
             auto old_feature_node = pattern_map.at(i).get_node_shared_ptr();

@@ -124,9 +124,9 @@ ov::intel_cpu::MLPFusion::MLPFusion() {
             // FakeQuantize, should skip fusion
             return false;
         }
-        Output<Node> gate_proj_w;
-        Output<Node> up_proj_w;
-        Output<Node> down_proj_w;
+        Output<ov::Node> gate_proj_w;
+        Output<ov::Node> up_proj_w;
+        Output<ov::Node> down_proj_w;
 
         // down projection is harder to quantize w/o causing accuracy problem, so it may be un-quantized instead
         bool is_gate_up_quantized_int8 = false;
@@ -215,7 +215,7 @@ ov::intel_cpu::MLPFusion::MLPFusion() {
 
         LLMMLPNode::Config config;
         OutputVector new_args;
-        std::shared_ptr<Node> gate_act;
+        std::shared_ptr<ov::Node> gate_act;
 
         config.gate_up_quantized = is_gate_up_quantized_int8;
         config.down_quantized = is_down_proj_int8;

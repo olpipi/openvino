@@ -77,23 +77,23 @@ StatefulSDPAFusion::StatefulSDPAFusion() {
     auto concat_k = makePattern<ov::op::v0::Concat>({gather_input_k, cur_k}, {{"axis", axis_seq_len}});
     auto concat_v = makePattern<ov::op::v0::Concat>({gather_input_v, cur_v}, {{"axis", axis_seq_len}});
 
-    std::shared_ptr<Node> reshape_k;
-    std::shared_ptr<Node> reshape_v;
-    std::shared_ptr<Node> unsqueeze_k;
-    std::shared_ptr<Node> unsqueeze_v;
-    std::shared_ptr<Node> computed_bcst_k;
-    std::shared_ptr<Node> computed_bcst_v;
-    std::shared_ptr<Node> multiply_k;
-    std::shared_ptr<Node> multiply_v;
-    std::shared_ptr<Node> mq_reshape_k;
-    std::shared_ptr<Node> mq_reshape_v;
-    std::shared_ptr<Node> computed_bcst3_k;
-    std::shared_ptr<Node> computed_bcst3_v;
-    auto multi_query_bcst = [](const std::shared_ptr<Node>& kv) {
+    std::shared_ptr<ov::Node> reshape_k;
+    std::shared_ptr<ov::Node> reshape_v;
+    std::shared_ptr<ov::Node> unsqueeze_k;
+    std::shared_ptr<ov::Node> unsqueeze_v;
+    std::shared_ptr<ov::Node> computed_bcst_k;
+    std::shared_ptr<ov::Node> computed_bcst_v;
+    std::shared_ptr<ov::Node> multiply_k;
+    std::shared_ptr<ov::Node> multiply_v;
+    std::shared_ptr<ov::Node> mq_reshape_k;
+    std::shared_ptr<ov::Node> mq_reshape_v;
+    std::shared_ptr<ov::Node> computed_bcst3_k;
+    std::shared_ptr<ov::Node> computed_bcst3_v;
+    auto multi_query_bcst = [](const std::shared_ptr<ov::Node>& kv) {
         auto reshape_kv = makePattern<ov::op::v1::Reshape>({kv, any_input()});
         auto unsqueeze_kv = makePattern<ov::op::v0::Unsqueeze>({kv, any_input()});
 
-        auto check_one = [](const Output<Node>& output) -> bool {
+        auto check_one = [](const Output<ov::Node>& output) -> bool {
             auto node = ov::as_type_ptr<ov::op::v0::Constant>(output.get_node_shared_ptr());
             const auto& bcst_arg = node->cast_vector<float>();
             return std::all_of(bcst_arg.begin(), bcst_arg.end(), [](float i) {
@@ -235,7 +235,7 @@ StatefulSDPAFusion::StatefulSDPAFusion() {
             return false;
         }
 
-        auto is_optional_one_child = [&pattern_map](const std::vector<std::shared_ptr<Node>>& nodes) {
+        auto is_optional_one_child = [&pattern_map](const std::vector<std::shared_ptr<ov::Node>>& nodes) {
             for (auto&& node : nodes) {
                 if (pattern_map.count(node)) {
                     auto p = pattern_map.at(node).get_node_shared_ptr();
