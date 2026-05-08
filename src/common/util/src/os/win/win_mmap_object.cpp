@@ -3,6 +3,10 @@
 //
 
 #include <stdexcept>
+#include <algorithm>
+#include <iostream>
+#include <thread>
+#include <vector>
 
 #include "openvino/util/common_util.hpp"
 #include "openvino/util/file_util.hpp"
@@ -95,6 +99,50 @@ public:
 
     uint64_t get_id() const noexcept override {
         return m_id;
+    }
+
+    std::uint64_t parallel_prefault_readonly(std::size_t num_threads = 10) {
+        std::cout << "Prefaulting mapped memory with " << num_threads << " threads.\n";
+        if (!m_data || m_size == 0)
+            return 0;
+
+        const std::size_t page = static_cast<std::size_t>(util::get_system_page_size());
+        const std::size_t pages = (m_size + page - 1) / page;
+
+        if (num_threads == 0)
+            num_threads = 1;
+
+        num_threads = std::min(num_threads, pages);
+
+        std::vector<std::thread> threads;
+        std::vector<std::uint64_t> partial(num_threads, 0);
+
+        for (std::size_t tid = 0; tid < num_threads; ++tid) {
+            threads.emplace_back([&, tid] {
+                const std::size_t begin_page = pages * tid / num_threads;
+                const std::size_t end_page   = pages * (tid + 1) / num_threads;
+
+                std::uint64_t local = 0;
+
+                for (std::size_t p = begin_page; p < end_page; ++p) {
+                    const std::size_t off = p * page;
+                    if (off < m_size) {
+                        local += static_cast<unsigned char>(static_cast<char*>(m_data)[off]);
+                    }
+                }
+
+                partial[tid] = local;
+            });
+        }
+
+        for (auto& t : threads)
+            t.join();
+
+        std::uint64_t sink = 0;
+        for (auto v : partial)
+            sink += v;
+
+        return sink;
     }
 
 private:
