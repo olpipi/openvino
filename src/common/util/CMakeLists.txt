@@ -54,6 +54,11 @@ if(ENABLE_LIBURING AND TARGET openvino::liburing)
     target_compile_definitions(${TARGET_NAME} PRIVATE OPENVINO_ENABLE_LIBURING)
 endif()
 
+# Optional IoRing-based async file reader (Windows 11+, dynamically loaded).
+if(ENABLE_IO_RING AND WIN32)
+    target_compile_definitions(${TARGET_NAME} PRIVATE OPENVINO_ENABLE_WIN_IO_RING)
+endif()
+
 ov_add_clang_format_target(${TARGET_NAME}_clang FOR_TARGETS ${TARGET_NAME})
 ov_ncc_naming_style(FOR_TARGET ${TARGET_NAME}
                     SOURCE_DIRECTORIES ${UTIL_INCLUDE_DIR})

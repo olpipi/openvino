@@ -232,6 +232,12 @@ ov_dependent_option(ENABLE_LIBURING
     "Enable io_uring-based file reader using bundled liburing" ON
     "LINUX" OFF)
 
+# Windows IoRing-based async file reader (Windows 11+ at runtime, loaded
+# dynamically so the binary still runs on Windows 10).
+ov_dependent_option(ENABLE_IO_RING
+    "Enable IoRing-based async file reader on Windows" ON
+    "WIN32" OFF)
+
 #
 # Process featues
 #
