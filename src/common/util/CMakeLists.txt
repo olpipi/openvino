@@ -48,6 +48,12 @@ endif()
 
 target_include_directories(${TARGET_NAME} PUBLIC $<BUILD_INTERFACE:${UTIL_INCLUDE_DIR}>)
 
+# Optional io_uring-based file reader (Linux only, bundled liburing).
+if(ENABLE_LIBURING AND TARGET openvino::liburing)
+    target_link_libraries(${TARGET_NAME} PRIVATE openvino::liburing)
+    target_compile_definitions(${TARGET_NAME} PRIVATE OPENVINO_ENABLE_LIBURING)
+endif()
+
 ov_add_clang_format_target(${TARGET_NAME}_clang FOR_TARGETS ${TARGET_NAME})
 ov_ncc_naming_style(FOR_TARGET ${TARGET_NAME}
                     SOURCE_DIRECTORIES ${UTIL_INCLUDE_DIR})

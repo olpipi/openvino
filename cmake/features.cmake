@@ -226,6 +226,12 @@ else()
     set(ENABLE_OV_ZERO_LOADER OFF)
 endif()
 
+# liburing-backed io_uring file reader (Linux only). Built from sources fetched
+# from https://github.com/axboe/liburing via FetchContent.
+ov_dependent_option(ENABLE_LIBURING
+    "Enable io_uring-based file reader using bundled liburing" ON
+    "LINUX" OFF)
+
 #
 # Process featues
 #

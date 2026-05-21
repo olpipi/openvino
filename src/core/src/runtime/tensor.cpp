@@ -20,6 +20,7 @@
 #include "openvino/runtime/remote_tensor.hpp"
 #include "openvino/runtime/shared_buffer.hpp"
 #include "openvino/util/file_util.hpp"
+#include "openvino/util/io_uring_reader.hpp"
 #include "openvino/util/mmap_object.hpp"
 #include "openvino/util/parallel_read_streambuf.hpp"
 
@@ -262,7 +263,21 @@ Tensor read_tensor_data(const std::filesystem::path& file_name,
         const auto available_size = static_cast<size_t>(file_size - offset_in_bytes);
         const auto static_shape = resolve_static_shape(available_size, element_type, partial_shape);
         const auto tensor = std::make_shared<ov::Tensor>(element_type, static_shape);
-        read_tensor_via_istream(file_name, *tensor.get(), offset_in_bytes);
+        // Prefer io_uring when the running kernel supports it: parallel SQ/CQ
+        // submission into the freshly allocated tensor buffer avoids the
+        // memcpy that the istream path incurs through ParallelReadStreamBuf.
+        // Fall back to the istream path if io_uring is unavailable or the
+        // read fails for any reason.
+        bool read_done = false;
+        if (ov::util::is_io_uring_available()) {
+            read_done = ov::util::read_file_io_uring(file_name,
+                                                    static_cast<char*>(tensor->data()),
+                                                    tensor->get_byte_size(),
+                                                    offset_in_bytes);
+        }
+        if (!read_done) {
+            read_tensor_via_istream(file_name, *tensor.get(), offset_in_bytes);
+        }
         auto result = wrap_obj_to_viewtensor(tensor, tensor->data(), element_type, static_shape);
         set_tensor_source_id(result, util::get_id_for_file(file_name, offset_in_bytes, tensor->get_byte_size()));
         return result;

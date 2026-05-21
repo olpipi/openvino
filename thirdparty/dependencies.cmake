@@ -69,6 +69,14 @@ if(X86_64 OR X86 OR UNIVERSAL2)
 endif()
 
 #
+# liburing (Linux io_uring) - bundled, fetched from GitHub
+#
+
+if(ENABLE_LIBURING)
+    add_subdirectory(thirdparty/liburing EXCLUDE_FROM_ALL)
+endif()
+
+#
 # LevelZero
 #
 
