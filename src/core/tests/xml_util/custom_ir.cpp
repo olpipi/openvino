@@ -452,6 +452,30 @@ TEST_F(CustomIRTest, parse_weightless_cache_attribute_oob_throws) {
     EXPECT_THROW(ov::Core().read_model(m_out_xml_path, m_out_bin_path), ov::Exception);
 }
 
+/**
+ * @brief A Const's <data shape="..."> that makes shape_size(shape) * bitwidth overflow size_t
+ * must still be rejected, not wrap around and let a too-small buffer pass validation.
+ */
+TEST_F(CustomIRTest, const_shape_size_overflow_throws) {
+    {
+        auto c = std::make_shared<Constant>(element::u4, Shape{2}, std::vector<uint8_t>{1, 0});
+        ov::serialize(std::make_shared<Model>(OutputVector{c}, ParameterVector{}), m_out_xml_path, m_out_bin_path);
+    }
+
+    // 2^62: for a 4-bit type, shape_size(shape) * bitwidth == 2^64 which wraps to 0,
+    // making the (size < required) check pass even though the real .bin is 1 byte.
+    pugi::xml_document doc;
+    ASSERT_EQ(doc.load_file(m_out_xml_path.string().c_str()).status, pugi::status_ok);
+    for (auto& layer : doc.child("net").child("layers").children("layer")) {
+        if (std::string(layer.attribute("type").value()) == "Const") {
+            layer.child("data").attribute("shape").set_value("4611686018427387904");
+        }
+    }
+    doc.save_file(m_out_xml_path.string().c_str());
+
+    EXPECT_THROW(ov::Core().read_model(m_out_xml_path, m_out_bin_path), ov::Exception);
+}
+
 TEST(StrToContainer, FloatVectorWithInfAndNan) {
     {
         std::vector<float> result;

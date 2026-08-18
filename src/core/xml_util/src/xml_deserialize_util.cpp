@@ -4,6 +4,7 @@
 
 #include "openvino/xml_util/xml_deserialize_util.hpp"
 
+#include <algorithm>
 #include <regex>
 #include <stack>
 #include <string_view>
@@ -904,16 +905,16 @@ void XmlDeserializer::set_constant_num_buffer(ov::AttributeAdapter<std::shared_p
         auto buffer = ov::AttributeAdapter<std::shared_ptr<ov::StringAlignedBuffer>>::unpack_string_tensor(data, size);
         adapter.set(buffer);
     } else {
-        if (size < ((ov::shape_size(shape) * el_type.bitwidth() + 7) >> 3)) {
+        const auto ov_shape = ov::Shape(shape.begin(), shape.end());
+        const auto required_size = ov::util::get_memory_size_safe(el_type, ov_shape);
+        if (!required_size || size < *required_size) {
             const auto type = pugixml::get_str_attr(m_node, "type");
             OPENVINO_THROW("Attribute and shape size are inconsistent for ",
                            type,
-                           " op!",
+                           " op! Buffer size: ",
                            size,
-                           ", ",
-                           ((ov::shape_size(shape) * el_type.bitwidth() + 7) >> 3),
-                           ", ",
-                           ov::util::get_memory_size(el_type, ov::shape_size(shape)));
+                           ", required size: ",
+                           (required_size ? std::to_string(*required_size) : std::string("<overflow>")));
         }
 
         auto buffer = std::make_shared<ov::SharedBuffer<std::shared_ptr<ov::AlignedBuffer>>>(data, size, m_weights);
