@@ -327,6 +327,9 @@ void XmlDeserializer::set_constant_num_buffer(ov::AttributeAdapter<std::shared_p
                     "[ CPU ] Could not get attribute 'shape' during weights deserialization.");
 
     if (original_dtype != target_dtype) {
+        const auto required_original_size = ov::util::get_memory_size_safe(original_dtype, shape);
+        OPENVINO_ASSERT(required_original_size && actual_size >= *required_original_size,
+                        "[ CPU ] Attribute and shape size are inconsistent during weights deserialization.");
         const auto org_tensor = ov::Tensor(original_dtype, shape, data);
         auto converted_weights =
             std::make_shared<ov::AlignedBuffer>(ov::util::get_memory_size(target_dtype, ov::shape_size(shape)));
@@ -335,16 +338,15 @@ void XmlDeserializer::set_constant_num_buffer(ov::AttributeAdapter<std::shared_p
         OPENVINO_ASSERT(convert.evaluate(converted_output, {org_tensor}), "Conversion not supported");
         adapter.set(converted_weights);
     } else {
-        if (actual_size < ((ov::shape_size(shape) * target_dtype.bitwidth() + 7) >> 3)) {
+        const auto required_size = ov::util::get_memory_size_safe(target_dtype, shape);
+        if (!required_size || actual_size < *required_size) {
             const auto type = ov::util::pugixml::get_str_attr(get_node(), "type");
             OPENVINO_THROW("Attribute and shape size are inconsistent for ",
                            type,
-                           " op!",
+                           " op! Buffer size: ",
                            actual_size,
-                           ", ",
-                           ((ov::shape_size(shape) * target_dtype.bitwidth() + 7) >> 3),
-                           ", ",
-                           ov::util::get_memory_size(target_dtype, ov::shape_size(shape)));
+                           ", required size: ",
+                           (required_size ? std::to_string(*required_size) : std::string("<overflow>")));
         }
 
         auto buffer =
