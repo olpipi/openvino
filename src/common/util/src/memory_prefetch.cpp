@@ -167,4 +167,25 @@ PrefetchToken submit_page_toucher_tasks(void* ptr, size_t size, size_t num_threa
     }
 }
 
+PrefetchToken submit_jobs(size_t count, const std::function<void()>& job) noexcept {
+    try {
+        if (count == 0) {
+            return {};
+        }
+        auto latch = std::make_shared<CompletionLatch>(count);
+        std::list<std::function<void()>> jobs;
+        for (size_t i = 0; i < count; ++i) {
+            jobs.emplace_back([latch, job]() {
+                job();
+                latch->count_down();
+            });
+        }
+        auto future = latch->get_future();
+        ThreadPool::instance().submit(std::move(jobs));
+        return future;
+    } catch (const std::exception&) {
+        return {};
+    }
+}
+
 }  // namespace ov::util

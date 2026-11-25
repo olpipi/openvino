@@ -16,10 +16,12 @@
 #include <optional>
 #include <thread>
 #include <tuple>
+#include <vector>
 
 #include "memory_prefetch.hpp"
 #include "openvino/util/file_util.hpp"
 #include "openvino/util/hash_util.hpp"
+#include "openvino/util/math_util.hpp"
 #include "openvino/util/memory.hpp"
 #include "openvino/util/mmap_object.hpp"
 #include "openvino/util/parallel_io.hpp"
@@ -109,6 +111,7 @@ public:
 class MapHolder final : public MappedMemory {
     void* m_mapped_view = MAP_FAILED;
     size_t m_mapped_view_size = 0;
+    size_t m_mapped_view_offset = 0;  // file offset of m_mapped_view
     std::byte* m_data = nullptr;
     size_t m_size = 0;
     std::optional<uint64_t> m_id;
@@ -180,6 +183,7 @@ public:
             const auto prot = (mmap_mode == MmapMode::READ_WRITE) ? (PROT_READ | PROT_WRITE) : PROT_READ;
             const auto& [aligned_offset, length, gap] = util::make_mmap_region(offset, m_size);
             m_mapped_view_size = length;
+            m_mapped_view_offset = aligned_offset;
             m_mapped_view = mmap(nullptr, length, prot, MAP_SHARED, fd, aligned_offset);
             if (m_mapped_view == MAP_FAILED) {
                 throw std::runtime_error("Can not create file mapping for " + std::to_string(fd) +
@@ -239,12 +243,66 @@ public:
     util::PrefetchToken hint_prefetch_async(size_t offset, size_t size) noexcept override {
         if (const auto region = util::clamp_align_region(m_data, m_size, offset, size);
             region.m_length > util::default_parallel_io_threshold) {
-            auto future = util::vm_prefetch_async(reinterpret_cast<void*>(region.m_address),
-                                                  region.m_length,
-                                                  util::prefetch_thread_count(region.m_length));
+            auto future = read_into_page_cache(region);
             adopt_pending_prefetch(future);
             return future;
         } else {
+            return {};
+        }
+    }
+
+private:
+    // Reads the region through the file descriptor instead of touching the mapped pages: this fills the page cache
+    // without page faults and RSS, and keeps progressing while the process is busy creating other mappings (e.g. a
+    // device driver mapping its buffers). The workers take slices front to back and skip already cached ones.
+    util::PrefetchToken read_into_page_cache(const util::AlignedRegion& region) noexcept {
+        struct Range {
+            int fd;
+            const std::byte* data;
+            size_t file_offset;
+            size_t size;
+            std::atomic<size_t> next{0};
+        };
+        static constexpr size_t slice_size = 16 * 1024 * 1024;
+        static constexpr size_t read_size = 2 * 1024 * 1024;
+        try {
+            const auto data = reinterpret_cast<const std::byte*>(region.m_address);
+            const auto file_offset =
+                m_mapped_view_offset + static_cast<size_t>(data - static_cast<std::byte*>(m_mapped_view));
+            const auto end = std::min(file_offset + region.m_length, m_mapped_view_offset + m_mapped_view_size);
+            auto range = std::shared_ptr<Range>(new Range{m_handle.get(), data, file_offset, end - file_offset});
+            return util::submit_jobs(util::prefetch_thread_count(range->size), [range]() {
+                try {
+                    const auto page_size = static_cast<size_t>(util::get_system_page_size());
+                    std::vector<char> buffer(read_size);
+                    std::vector<unsigned char> residency(slice_size / page_size);
+                    for (size_t position; (position = range->next.fetch_add(slice_size)) < range->size;) {
+                        const auto length = std::min(slice_size, range->size - position);
+                        auto address = const_cast<std::byte*>(range->data + position);
+                        if (mincore(address, length, residency.data()) == 0 &&
+                            std::all_of(residency.begin(),
+                                        residency.begin() + util::ceil_div(length, page_size),
+                                        [](unsigned char resident) {
+                                            return resident & 1;
+                                        })) {
+                            continue;
+                        }
+                        for (size_t done = 0; done < length;) {
+                            const auto count = pread(range->fd,
+                                                     buffer.data(),
+                                                     std::min(read_size, length - done),
+                                                     static_cast<off_t>(range->file_offset + position + done));
+                            if (count <= 0) {
+                                break;
+                            }
+                            done += static_cast<size_t>(count);
+                        }
+                    }
+                } catch (const std::exception&) {
+                    // Best effort: the consumer reads the data anyway.
+                }
+            });
+        } catch (const std::exception&) {
             return {};
         }
     }

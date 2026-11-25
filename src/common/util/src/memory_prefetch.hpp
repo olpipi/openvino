@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <future>
 #include <thread>
 
@@ -69,6 +70,14 @@ PrefetchToken vm_prefetch_async(void* ptr, size_t size, size_t num_threads) noex
  * the work could not be scheduled (e.g. an allocation failure).
  */
 PrefetchToken submit_page_toucher_tasks(void* ptr, size_t size, size_t num_threads) noexcept;
+
+/**
+ * @brief Runs @p job @p count times on the shared background thread pool.
+ *
+ * Returns a handle that becomes ready once every run has finished, or an invalid handle if the work could not be
+ * scheduled. @p job must not throw.
+ */
+PrefetchToken submit_jobs(size_t count, const std::function<void()>& job) noexcept;
 
 /**
  * @brief Clamps [offset, offset + size) to [0, mapping_size) and page-aligns the result, rounding
