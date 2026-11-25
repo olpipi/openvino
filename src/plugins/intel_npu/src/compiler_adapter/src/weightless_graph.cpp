@@ -4,8 +4,10 @@
 
 #include "weightless_graph.hpp"
 
+#include <algorithm>
 #include <cinttypes>
 #include <condition_variable>
+#include <cstring>
 #include <iterator>
 #include <mutex>
 #include <queue>
@@ -15,8 +17,10 @@
 #include "intel_npu/utils/zero/zero_cmd_queue_pool.hpp"
 #include "intel_npu/utils/zero/zero_utils.hpp"
 #include "openvino/core/memory_util.hpp"
+#include "openvino/core/parallel.hpp"
 #include "openvino/core/rt_info/weightless_caching_attributes.hpp"
 #include "openvino/core/weight_sharing_util.hpp"
+#include "openvino/core/weights_prefetch.hpp"
 #include "openvino/runtime/icore.hpp"
 #include "openvino/runtime/make_tensor.hpp"
 #include "openvino/runtime/shared_buffer.hpp"
@@ -36,6 +40,26 @@ constexpr std::string_view WEIGHTS_ONNX_PROXY_EXTENSION = ".data_proxy";
 constexpr std::string_view ONNX_EXTENSION = ".onnx";
 
 constexpr std::string_view CONSTANT_OVERFLOW_MESSAGE = "Overflow while computing byte size for constant: ";
+
+constexpr size_t PREFETCH_LOOKAHEAD = 2;
+constexpr size_t PREFETCH_MIN_BYTES = 32 * 1024 * 1024;
+
+// One thread copies ~2.6 GB/s, so big weights are copied in parallel chunks.
+void copy_weights(void* destination, const void* source, const size_t size) {
+    constexpr size_t MIN_CHUNK = 512 * 1024;
+    const auto threads = static_cast<size_t>(std::max(1, parallel_get_max_threads()));
+    const size_t chunk = std::max(MIN_CHUNK, (size + threads - 1) / threads);
+    if (chunk >= size) {
+        std::memcpy(destination, source, size);
+        return;
+    }
+    ov::parallel_for((size + chunk - 1) / chunk, [&](size_t index) {
+        const size_t offset = index * chunk;
+        std::memcpy(static_cast<char*>(destination) + offset,
+                    static_cast<const char*>(source) + offset,
+                    std::min(chunk, size - offset));
+    });
+}
 
 std::unordered_map<size_t, std::shared_ptr<ov::op::v0::Constant>> get_all_constants_in_topological_order(
     const std::shared_ptr<const ov::Model>& model) {
@@ -447,8 +471,20 @@ WeightlessGraph::InputData WeightlessGraph::allocate_inputs(
 
     // Due to the large number of init inputs, allocating a single buffer for all of them is more efficient. "View
     // tensors" are used for separating them.
+    // The weights are read from the mapped file in the order of the inputs: prefetch the next ones while copying.
+    std::vector<std::shared_ptr<ov::Node>> copyOrder;
+    copyOrder.reserve(_initsMetadata.at(initIndex).inputs.size());
+    for (const IODescriptor& descriptor : _initsMetadata.at(initIndex).inputs) {
+        if (const auto id = ov::util::view_to_number<size_t>(descriptor.nameFromCompiler)) {
+            if (const auto it = constants.find(*id); it != constants.end()) {
+                copyOrder.push_back(it->second);
+            }
+        }
+    }
+
     const std::shared_ptr<ZeroTensor> initInputsAllocatedTensor =
         std::make_shared<ZeroTensor>(_zeroInitStruct, ov::element::Type_t::u8, ov::Shape({initInputsByteSize}), true);
+    ov::util::OrderedPrefetchScheduler prefetch(copyOrder, PREFETCH_LOOKAHEAD, PREFETCH_MIN_BYTES);
 
     std::vector<size_t> noLongerRequiredIds;
     noLongerRequiredIds.reserve(_initsMetadata.at(initIndex).inputs.size());
@@ -478,7 +514,9 @@ WeightlessGraph::InputData WeightlessGraph::allocate_inputs(
                         "Binary size mismatch found for weights ID ",
                         id,
                         " between the model and compiled metadata.");
-        std::memcpy(currentInputBufferLocation, constant->get_data_ptr(), currentInputSize);
+        prefetch.acquire(*constant);
+        copy_weights(currentInputBufferLocation, constant->get_data_ptr(), currentInputSize);
+        prefetch.release(*constant);
 
         // Note: Use compiler-provided precision and shape, because duplicates -
         // constants that point to the same binary data - can in theory have
