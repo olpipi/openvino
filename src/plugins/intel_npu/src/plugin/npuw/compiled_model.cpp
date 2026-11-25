@@ -176,6 +176,8 @@ ov::npuw::s11n::WeightsContext make_import_weights_ctx(const ov::AnyMap& propert
             mapped_memory = ov::load_mmap_object(ov::util::make_path(weights_path));
         }
         if (mapped_memory) {
+            // The weights bank reads the whole file soon; read it into the page cache meanwhile.
+            std::ignore = mapped_memory->hint_prefetch_async(0, mapped_memory->size());
             weights = std::make_shared<Weights>(mapped_memory->data(), mapped_memory->size(), mapped_memory);
         }
     }

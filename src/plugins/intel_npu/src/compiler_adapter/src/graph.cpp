@@ -5,11 +5,13 @@
 #include "graph.hpp"
 
 #include <iterator>
+#include <tuple>
 
 #include "intel_npu/config/options.hpp"
 #include "intel_npu/utils/utils.hpp"
 #include "intel_npu/utils/zero/zero_cmd_queue_pool.hpp"
 #include "intel_npu/utils/zero/zero_utils.hpp"
+#include "openvino/runtime/make_tensor.hpp"
 
 namespace intel_npu {
 
@@ -220,6 +222,12 @@ void Graph::initialize_impl(const Config& config) {
         }
     }
 
+    if (_blob.has_value()) {
+        // The driver copies the blob in initializeGraph(): read the file meanwhile.
+        if (const auto hints = ov::get_memory_hints(*_blob)) {
+            std::ignore = hints->hint_prefetch();
+        }
+    }
     _zeGraphExt->initializeGraph(_graphDesc);
     _logger.debug("Graph initialize finish");
 
