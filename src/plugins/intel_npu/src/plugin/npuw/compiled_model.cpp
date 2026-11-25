@@ -10,6 +10,17 @@
 #include <string>
 #include <unordered_map>
 
+#ifdef __linux__
+#    include <fcntl.h>
+#    include <sys/mman.h>
+#    include <unistd.h>
+
+#    include <atomic>
+#    include <mutex>
+#    include <thread>
+#    include <vector>
+#endif
+
 #include "accuracy/comparator.hpp"
 #include "attn/attn_subgraph.hpp"
 #include "flux2_compiled_model.hpp"
@@ -118,6 +129,102 @@ bool should_use_weightless_flow(const ov::AnyMap& non_npuw_props,
     return is_weightless;
 }
 
+#ifdef __linux__
+/**
+ * @brief Reads weights files into the page cache with pread() from a few background threads, once per file, skipping
+ * pages that are already cached. The threads are joined when the plugin is unloaded.
+ * @details Faulting the weights in through the mapping does not progress while the host tensors of the weights bank
+ * are allocated (the driver maps them meanwhile), reading through the file descriptor does.
+ */
+class WeightsFilePrefetch {
+public:
+    static void start(const std::string& path, const std::shared_ptr<ov::MappedMemory>& mapping) {
+        static WeightsFilePrefetch instance;
+        instance.add(path, mapping);
+    }
+
+    ~WeightsFilePrefetch() {
+        _stop = true;
+        for (auto& thread : _threads) {
+            thread.join();
+        }
+    }
+
+private:
+    static constexpr std::size_t CHUNK = 16 * 1024 * 1024;
+    static constexpr std::size_t THREADS = 8;
+
+    struct File {
+        int fd = -1;
+        const std::byte* data = nullptr;
+        std::size_t size = 0;
+        std::atomic<std::size_t> next{0};
+        ~File() {
+            if (fd >= 0) {
+                ::close(fd);
+            }
+        }
+    };
+
+    void add(const std::string& path, const std::shared_ptr<ov::MappedMemory>& mapping) {
+        std::lock_guard<std::mutex> lock(_mutex);
+        if (_stop || !_started.insert(path).second) {
+            return;
+        }
+        auto file = std::make_shared<File>();
+        file->fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+        if (file->fd < 0) {
+            return;
+        }
+        file->data = mapping->data();
+        file->size = mapping->size();
+        try {
+            for (std::size_t i = 0; i < THREADS; ++i) {
+                _threads.emplace_back([this, file] {
+                    read(*file);
+                });
+            }
+        } catch (...) {
+            // Best effort: the weights bank reads the weights anyway.
+        }
+    }
+
+    void read(File& file) noexcept {
+        try {
+            std::vector<char> buffer(CHUNK);
+            std::vector<unsigned char> residency;
+            const auto page = static_cast<std::size_t>(::sysconf(_SC_PAGESIZE));
+            for (std::size_t position; !_stop && (position = file.next.fetch_add(CHUNK)) < file.size;) {
+                const std::size_t size = std::min(CHUNK, file.size - position);
+                residency.resize((size + page - 1) / page);
+                // The mapping may be gone by now: then mincore() fails and the chunk is read.
+                if (::mincore(const_cast<std::byte*>(file.data) + position, size, residency.data()) == 0 &&
+                    std::all_of(residency.begin(), residency.end(), [](unsigned char resident) {
+                        return resident & 1;
+                    })) {
+                    continue;
+                }
+                for (std::size_t done = 0; done < size && !_stop;) {
+                    const ssize_t count = ::pread(file.fd, buffer.data(), size - done, position + done);
+                    if (count <= 0) {
+                        break;
+                    }
+                    done += static_cast<std::size_t>(count);
+                }
+            }
+        } catch (...) {
+        }
+    }
+
+    std::mutex _mutex;
+    std::set<std::string> _started;
+    std::atomic<bool> _stop{false};
+    // shortcut: finished threads are joined only at unload, fine for a few weights files per process; reap them if
+    // a process imports many different weights files.
+    std::vector<std::thread> _threads;
+};
+#endif
+
 ov::npuw::s11n::WeightsContext make_import_weights_ctx(const ov::AnyMap& properties,
                                                        bool is_weightless,
                                                        const ov::npuw::s11n::BF16Cache& bf16_consts) {
@@ -176,6 +283,11 @@ ov::npuw::s11n::WeightsContext make_import_weights_ctx(const ov::AnyMap& propert
             mapped_memory = ov::load_mmap_object(ov::util::make_path(weights_path));
         }
         if (mapped_memory) {
+#ifdef __linux__
+            if (!weights_path.empty()) {
+                WeightsFilePrefetch::start(weights_path, mapped_memory);
+            }
+#endif
             weights = std::make_shared<Weights>(mapped_memory->data(), mapped_memory->size(), mapped_memory);
         }
     }
