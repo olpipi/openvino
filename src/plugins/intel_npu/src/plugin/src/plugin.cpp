@@ -6,6 +6,7 @@
 
 #include <fstream>
 #include <numeric>
+#include <tuple>
 
 #include "blob_format_importers.hpp"
 #include "compiled_model.hpp"
@@ -21,6 +22,7 @@
 #include "npuw/compiled_model.hpp"
 #include "npuw/gqa_compiled_model.hpp"
 #include "openvino/core/rt_info/weightless_caching_attributes.hpp"
+#include "openvino/core/weight_sharing_util.hpp"
 #include "openvino/op/constant.hpp"
 #include "openvino/runtime/intel_npu/properties.hpp"
 #include "openvino/runtime/properties.hpp"
@@ -263,6 +265,13 @@ std::shared_ptr<ov::ICompiledModel> Plugin::compile_model(const std::shared_ptr<
                                                           const ov::AnyMap& properties) const {
     OV_ITT_SCOPED_TASK(itt::domains::NPUPlugin, "Plugin::compile_model");
     update_global_properties(properties);
+
+    // The compiler (or NPUW) reads all weights soon: start loading the memory-mapped ones in the background.
+    for (const auto& op : model->get_ops()) {
+        if (const auto constant = ov::as_type<const ov::op::v0::Constant>(op.get())) {
+            std::ignore = ov::wsh::Extension::hint_prefetch(*constant);
+        }
+    }
 
     // Before going any further: if
     // ... 1 - NPUW mode is activated
