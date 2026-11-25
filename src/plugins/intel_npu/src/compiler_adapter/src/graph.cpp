@@ -6,10 +6,131 @@
 
 #include <iterator>
 
+#ifdef __linux__
+#    include <fcntl.h>
+#    include <sys/mman.h>
+#    include <unistd.h>
+
+#    include <algorithm>
+#    include <atomic>
+#    include <cinttypes>
+#    include <cstdio>
+#    include <fstream>
+#    include <string>
+#    include <thread>
+#    include <vector>
+#endif
+
 #include "intel_npu/config/options.hpp"
 #include "intel_npu/utils/utils.hpp"
 #include "intel_npu/utils/zero/zero_cmd_queue_pool.hpp"
 #include "intel_npu/utils/zero/zero_utils.hpp"
+
+namespace {
+
+#ifdef __linux__
+/**
+ * @brief Reads the file behind a file-mapped blob into the page cache with pread() from several threads, skipping
+ * pages that are already cached. Stops and joins on destruction.
+ * @details Faulting the pages in through the mapping (ov::MappedMemory::hint_prefetch) does not progress while the
+ * driver maps its device buffer during graph initialization, reading through the file descriptor does.
+ */
+class BlobFilePrefetch {
+public:
+    BlobFilePrefetch(const void* data, size_t size) {
+        if (size < MIN_SIZE) {
+            return;
+        }
+        const auto address = reinterpret_cast<uintptr_t>(data);
+        std::ifstream maps("/proc/self/maps");
+        for (std::string line; std::getline(maps, line);) {
+            uintptr_t low = 0, high = 0;
+            unsigned long long offset = 0;
+            char path[4096] = {};
+            const int fields = std::sscanf(line.c_str(),
+                                           "%" SCNxPTR "-%" SCNxPTR " %*s %llx %*s %*s %4095s",
+                                           &low,
+                                           &high,
+                                           &offset,
+                                           path);
+            if (fields < 3 || address < low || address >= high) {
+                continue;
+            }
+            if (fields < 4 || path[0] != '/' || (_fd = ::open(path, O_RDONLY | O_CLOEXEC)) < 0) {
+                return;  // not backed by a regular file
+            }
+            _address = address;
+            _begin = static_cast<size_t>(offset) + (address - low);
+            _end = _begin + size;
+            _next = _begin;
+            try {
+                for (size_t i = 0; i < THREADS; ++i) {
+                    _threads.emplace_back([this] {
+                        run();
+                    });
+                }
+            } catch (...) {
+                _stop = true;
+            }
+            return;
+        }
+    }
+
+    ~BlobFilePrefetch() {
+        _stop = true;
+        for (auto& thread : _threads) {
+            thread.join();
+        }
+        if (_fd >= 0) {
+            ::close(_fd);
+        }
+    }
+
+private:
+    static constexpr size_t MIN_SIZE = 64 * 1024 * 1024;
+    static constexpr size_t CHUNK = 16 * 1024 * 1024;
+    static constexpr size_t THREADS = 8;
+
+    void run() noexcept {
+        try {
+            std::vector<char> buffer(CHUNK);
+            std::vector<unsigned char> residency;
+            const auto page = static_cast<uintptr_t>(::sysconf(_SC_PAGESIZE));
+            for (size_t position; !_stop && (position = _next.fetch_add(CHUNK)) < _end;) {
+                const size_t size = std::min(CHUNK, _end - position);
+                const uintptr_t first = (_address + (position - _begin)) & ~(page - 1);
+                const size_t length = _address + (position - _begin) + size - first;
+                residency.resize((length + page - 1) / page);
+                if (::mincore(reinterpret_cast<void*>(first), length, residency.data()) == 0 &&
+                    std::all_of(residency.begin(), residency.end(), [](unsigned char resident) {
+                        return resident & 1;
+                    })) {
+                    continue;
+                }
+                for (size_t done = 0; done < size && !_stop;) {
+                    const ssize_t count = ::pread(_fd, buffer.data(), size - done, position + done);
+                    if (count <= 0) {
+                        break;
+                    }
+                    done += static_cast<size_t>(count);
+                }
+            }
+        } catch (...) {
+            // Best effort: the driver reads the blob anyway.
+        }
+    }
+
+    int _fd = -1;
+    uintptr_t _address = 0;
+    size_t _begin = 0;
+    size_t _end = 0;
+    std::atomic<size_t> _next{0};
+    std::atomic<bool> _stop{false};
+    std::vector<std::thread> _threads;
+};
+#endif
+
+}  // namespace
 
 namespace intel_npu {
 
@@ -220,7 +341,17 @@ void Graph::initialize_impl(const Config& config) {
         }
     }
 
-    _zeGraphExt->initializeGraph(_graphDesc);
+    {
+#ifdef __linux__
+        // The driver copies the blob in initializeGraph(), read it from disk meanwhile.
+        std::optional<BlobFilePrefetch> prefetch;
+        if (_blob.has_value()) {
+            const ov::Tensor& blob = *_blob;
+            prefetch.emplace(blob.data(), blob.get_byte_size());
+        }
+#endif
+        _zeGraphExt->initializeGraph(_graphDesc);
+    }
     _logger.debug("Graph initialize finish");
 
     //  We are allowed to release the original blob because weights were loaded in NPU memory during
